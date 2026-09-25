@@ -1,0 +1,15 @@
+# Default SDK configuration for IoTEdgeConnect firmware.
+# Override locally via sdkconfig; do not commit sdkconfig.
+
+# Serial console
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# Task watchdog — warn rather than panic during development
+CONFIG_ESP_TASK_WDT_PANIC=n
+
+# Disable Bluetooth to reduce binary size (not required for Phase 1)
+CONFIG_BT_ENABLED=n

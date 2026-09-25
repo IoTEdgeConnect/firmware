@@ -1,0 +1,28 @@
+# ESP-IDF build output
+build/
+sdkconfig
+sdkconfig.old
+
+# Dependencies fetched at build time
+managed_components/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Secrets — never commit these
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets.*
+credentials.*
+
+.amazonq
