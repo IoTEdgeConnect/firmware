@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "app_main.cpp"
+        "telemetry/telemetry.cpp"
+        "telemetry/telemetry_generator.cpp"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_timer
+        json
+)
