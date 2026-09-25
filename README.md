@@ -32,6 +32,18 @@ idf.py build
 idf.py -p <PORT> flash monitor
 ```
 
+Or use the convenience scripts (auto-detect port):
+
+```powershell
+# Windows
+.\scripts\flash_monitor.ps1
+```
+
+```bash
+# WSL / Linux / macOS
+./scripts/flash_monitor.sh
+```
+
 Replace `<PORT>` with your serial port (e.g. `COM3`, `/dev/ttyUSB0`).
 
 ---
@@ -68,7 +80,8 @@ flowchart TD
 | Document | Description |
 |---|---|
 | [Architecture](docs/architecture.md) | Module structure, data flow and design decisions |
-| [Building, Flashing & Monitoring](docs/building.md) | Full build and flash instructions |
+| [Building, Flashing & Monitoring](docs/building.md) | Full build and flash instructions, scripts reference |
+| [WSL Usage](docs/wsl.md) | Forwarding an ESP32 from Windows to WSL via usbipd-win |
 | [Testing](docs/testing.md) | Host-side unit tests and coverage |
 
 ---
