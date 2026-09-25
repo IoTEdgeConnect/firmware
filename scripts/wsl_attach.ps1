@@ -37,7 +37,6 @@ if (-not (Get-Command usbipd -ErrorAction SilentlyContinue)) {
 if (-not $BusId) {
     Write-Host "Scanning for ESP32 USB devices..." -ForegroundColor Cyan
 
-    # Parse usbipd list output
     $devices = usbipd list 2>&1 | Select-String '^\d+-\d+' | ForEach-Object {
         $line = $_.Line.Trim()
         if ($line -match '^(\d+-\d+)\s+([0-9a-f]{4}:[0-9a-f]{4})\s+(.+?)\s+(Not shared|Shared|Attached)') {
@@ -76,11 +75,27 @@ if (-not $BusId) {
     }
 }
 
-# Bind (makes the device shareable) — requires elevation; usbipd handles the UAC prompt
-Write-Host "Binding $BusId (may trigger a UAC prompt)..." -ForegroundColor Cyan
-usbipd bind --busid $BusId
+# Bind requires elevation. If not already elevated, spawn an elevated child
+# process for the bind step only — avoids a silent hang when UAC is suppressed.
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator)
 
-# Attach to WSL
+if ($isAdmin) {
+    Write-Host "Binding $BusId..." -ForegroundColor Cyan
+    usbipd bind --busid $BusId
+    if ($LASTEXITCODE -ne 0) { Write-Error "Bind failed."; exit 1 }
+} else {
+    Write-Host "Binding $BusId (a UAC prompt will appear)..." -ForegroundColor Cyan
+    $proc = Start-Process powershell.exe `
+        -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"usbipd bind --busid $BusId`"" `
+        -Verb RunAs -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
+        Write-Error "Bind failed (exit $($proc.ExitCode)). Try running this script as Administrator."
+        exit 1
+    }
+}
+
+# Attach does not require elevation
 Write-Host "Attaching $BusId to WSL distro '$Distro'..." -ForegroundColor Cyan
 usbipd attach --wsl $Distro --busid $BusId
 
