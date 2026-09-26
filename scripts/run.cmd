@@ -1,7 +1,7 @@
 @echo off
 :: scripts\run.cmd
 :: Launches any script in this directory with a temporary PowerShell execution
-:: policy bypass (Process scope only — no permanent system change).
+:: policy bypass (Process scope only - no permanent system change).
 ::
 :: First time setup:
 ::   scripts\run.cmd setup
@@ -48,35 +48,39 @@ set ARGS=
 for /f "tokens=1,*" %%a in ("%*") do set ARGS=%%b
 
 :: -----------------------------------------------------------------------
-:: wsl_attach needs admin — relaunch elevated if not already
+:: wsl_attach needs admin - relaunch elevated if not already
 :: -----------------------------------------------------------------------
 if /i "%~1"=="wsl_attach" (
     net session >nul 2>&1
     if errorlevel 1 (
         echo Relaunching as Administrator for wsl_attach...
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
-            "Start-Process cmd.exe -ArgumentList '/k cd /d \"%CD%\" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%SCRIPT%\" %ARGS%' -Verb RunAs"
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d \"%CD%\" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%SCRIPT%\" %ARGS%' -Verb RunAs"
         exit /b
     )
     goto :run
 )
 
 :: -----------------------------------------------------------------------
-:: For build/flash/monitor commands, ensure IDF is activated.
-:: If IDF_PATH is not set but the default install location exists, activate it.
+:: setup does not need IDF activated
 :: -----------------------------------------------------------------------
 if /i "%~1"=="setup" goto :run
 
+:: -----------------------------------------------------------------------
+:: Activate ESP-IDF if not already active.
+:: Delegate path detection to _idf_env.ps1 to avoid cmd quoting issues.
+:: -----------------------------------------------------------------------
 if "%IDF_PATH%"=="" (
-    :: Use PowerShell to glob-search known install locations
-    for /f "delims=" %%E in ('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "@('C:\Espressif\frameworks\esp-idf-v*','%USERPROFILE%\esp\esp-idf','C:\esp\esp-idf') | ForEach-Object { Resolve-Path $_ -ErrorAction SilentlyContinue } | Where-Object { Test-Path (Join-Path $_ 'export.bat') } | Select-Object -First 1 -ExpandProperty Path"') do set _IDF_DIR=%%E
-    if "!_IDF_DIR!"=="" (
+    set _ENV_FILE=%TEMP%\idf_env_vars.tmp
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0_idf_env.ps1" "!_ENV_FILE!"
+    if errorlevel 1 (
         echo.
         echo ERROR: ESP-IDF is not installed or not activated.
         echo        Run setup first:  scripts\run.cmd setup
         echo.
         exit /b 1
     )
+    for /f "usebackq tokens=1,* delims==" %%a in ("!_ENV_FILE!") do set %%a=%%b
+    del "!_ENV_FILE!" >nul 2>&1
     echo Activating ESP-IDF from !_IDF_DIR!...
     call "!_IDF_DIR!\export.bat"
 )

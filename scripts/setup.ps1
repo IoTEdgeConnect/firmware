@@ -1,10 +1,15 @@
-﻿# scripts/setup.ps1
+# scripts/setup.ps1
 # Check and install all dependencies required to build and flash IoTEdgeConnect firmware.
+# Safe to re-run at any time - each step checks before acting.
 #
-# Installer URLs are resolved at runtime from GitHub releases - no hardcoded
-# versions that go stale over time.
+# Steps:
+#   1. Git
+#   2. Python
+#   3. ESP-IDF source (offline installer)
+#   4. ESP-IDF toolchains (install.bat esp32)
+#   5. usbipd-win
 #
-# Run once after cloning:
+# Run with:
 #   scripts\run.cmd setup
 
 [CmdletBinding()]
@@ -13,11 +18,6 @@ param()
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# ---------------------------------------------------------------------------
-# Known ESP-IDF install locations, checked in priority order.
-# The offline installer (used by setup) always installs to C:\Espressif\frameworks\esp-idf-v*
-# Fallback paths cover manual installs.
-# ---------------------------------------------------------------------------
 $IDF_SEARCH_PATHS = @(
     'C:\Espressif\frameworks\esp-idf-v*',
     "$env:USERPROFILE\esp\esp-idf",
@@ -29,6 +29,7 @@ function Write-Step([string]$msg) { Write-Host ""; Write-Host "==> $msg" -Foregr
 function Write-Ok([string]$msg)   { Write-Host "    OK  $msg" -ForegroundColor Green }
 function Write-Warn([string]$msg) { Write-Host "    !!  $msg" -ForegroundColor Yellow }
 
+# Find the ESP-IDF source directory by checking known install locations.
 function Find-IdfInstall {
     foreach ($pattern in $IDF_SEARCH_PATHS) {
         $resolved = Resolve-Path $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -39,18 +40,36 @@ function Find-IdfInstall {
     return $null
 }
 
-function Get-LatestGitHubRelease {
-    param(
-        [string]$Repo,
-        [string]$TagPattern,
-        [string]$AssetPattern
+# Derive the tools root from the IDF source location.
+# Offline installer: C:\Espressif\frameworks\esp-idf-vX.Y.Z -> C:\Espressif
+# Manual install:    C:\esp\esp-idf -> C:\esp  or  ~/.espressif
+function Find-IdfToolsPath([string]$idfDir) {
+    $candidates = @(
+        (Split-Path (Split-Path $idfDir)),
+        'C:\Espressif',
+        "$env:USERPROFILE\.espressif"
     )
+    return $candidates | Where-Object { Test-Path (Join-Path $_ 'tools') } | Select-Object -First 1
+}
+
+# Find the Python venv created by install.bat under the tools root.
+function Find-IdfVenv([string]$toolsPath) {
+    $envDir = Join-Path $toolsPath 'python_env'
+    if (-not (Test-Path $envDir)) { return $null }
+    return Get-ChildItem $envDir -Directory |
+        Where-Object { Test-Path (Join-Path $_.FullName 'Scripts\python.exe') } |
+        Sort-Object Name -Descending |
+        Select-Object -First 1 -ExpandProperty FullName
+}
+
+function Get-LatestGitHubRelease {
+    param([string]$Repo, [string]$TagPattern, [string]$AssetPattern)
     $headers  = @{ 'User-Agent' = 'IoTEdgeConnect-setup' }
     $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases" -Headers $headers
     $release  = $releases | Where-Object { $_.tag_name -match $TagPattern -and -not $_.prerelease } | Select-Object -First 1
     if (-not $release) { throw "No release found in $Repo matching '$TagPattern'." }
     $asset = $release.assets | Where-Object { $_.name -match $AssetPattern } | Select-Object -First 1
-    if (-not $asset)   { throw "No asset found in '$($release.tag_name)' matching '$AssetPattern'." }
+    if (-not $asset) { throw "No asset found in '$($release.tag_name)' matching '$AssetPattern'." }
     return [PSCustomObject]@{ Version = $release.tag_name; Url = $asset.browser_download_url; Name = $asset.name; Size = $asset.size }
 }
 
@@ -79,22 +98,19 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. ESP-IDF
+# 3. ESP-IDF source
 # ---------------------------------------------------------------------------
-Write-Step "Checking ESP-IDF..."
+Write-Step "Checking ESP-IDF source..."
 
 $idfDir = Find-IdfInstall
 
 if ($idfDir) {
-    $versionFile = "$idfDir\version.txt"
-    $ver = if (Test-Path $versionFile) { (Get-Content $versionFile -Raw).Trim() } else { 'unknown version' }
+    $ver = if (Test-Path "$idfDir\version.txt") { (Get-Content "$idfDir\version.txt" -Raw).Trim() } else { 'unknown version' }
     Write-Ok "ESP-IDF found at $idfDir ($ver)"
 } else {
     Write-Warn "ESP-IDF not found - resolving latest offline installer..."
     Write-Host "    Querying GitHub releases for espressif/idf-installer..." -ForegroundColor DarkGray
 
-    # Offline installer bundles Python 3.11 and installs to C:\Espressif.
-    # No system Python dependency, no venv mismatch.
     $installer = Get-LatestGitHubRelease `
         -Repo         'espressif/idf-installer' `
         -TagPattern   '^offline-' `
@@ -103,14 +119,11 @@ if ($idfDir) {
     $sizeBytes = $installer.Size
     $sizeMB    = [math]::Round($sizeBytes / 1MB, 1)
 
-    Write-Host "    Latest:    $($installer.Name) ($($installer.Version))" -ForegroundColor DarkGray
-    Write-Host "    Location:  C:\Espressif (bundled Python, no system dependency)" -ForegroundColor DarkGray
-    Write-Host "    Size:      $sizeMB MB ($sizeBytes bytes)" -ForegroundColor DarkGray
+    Write-Host "    Latest:   $($installer.Name) ($($installer.Version))" -ForegroundColor DarkGray
+    Write-Host "    Location: C:\Espressif (bundled Python, no system dependency)" -ForegroundColor DarkGray
+    Write-Host "    Size:     $sizeMB MB ($sizeBytes bytes)" -ForegroundColor DarkGray
     Write-Host "    Downloading..." -ForegroundColor DarkGray
 
-    # Start async download then poll the partial file size for progress.
-    # WebClient.DownloadFileAsync is much faster than Invoke-WebRequest.
-    # Progress events fire in a separate runspace so we poll the file instead.
     $wc = New-Object System.Net.WebClient
     $wc.Headers.Add('User-Agent', 'IoTEdgeConnect-setup')
     $wc.DownloadFileAsync([uri]$installer.Url, $IDF_INSTALLER_TMP)
@@ -126,7 +139,6 @@ if ($idfDir) {
     }
     Write-Host ""
 
-    # Verify downloaded size matches GitHub API value
     $actualSize = (Get-Item $IDF_INSTALLER_TMP).Length
     if ($actualSize -ne $sizeBytes) {
         Write-Error "Download size mismatch: expected $sizeBytes bytes, got $actualSize. File may be corrupt."
@@ -135,23 +147,13 @@ if ($idfDir) {
     }
 
     $sha256 = (Get-FileHash $IDF_INSTALLER_TMP -Algorithm SHA256).Hash.ToLower()
-    Write-Host "    Size OK:   $sizeMB MB" -ForegroundColor DarkGray
-    Write-Host "    SHA256:    $sha256" -ForegroundColor DarkGray
-
-    # Run the installer with its GUI visible so the user gets real-time progress.
-    # /NORESTART prevents an automatic reboot if one is requested.
-    $logFile = "$env:TEMP\esp-idf-setup.log"
-    $installerArgs = @(
-        '/NORESTART',
-        "/LOG=`"$logFile`""
-    )
-
+    Write-Host "    Size OK:  $sizeMB MB" -ForegroundColor DarkGray
+    Write-Host "    SHA256:   $sha256" -ForegroundColor DarkGray
     Write-Host "    Starting installer - follow the wizard for progress..." -ForegroundColor DarkGray
     Write-Host ""
 
-    $proc = Start-Process -FilePath $IDF_INSTALLER_TMP -ArgumentList $installerArgs -Wait -PassThru
+    $proc = Start-Process -FilePath $IDF_INSTALLER_TMP -ArgumentList '/NORESTART' -Wait -PassThru
     Remove-Item $IDF_INSTALLER_TMP -ErrorAction SilentlyContinue
-    Remove-Item $logFile -ErrorAction SilentlyContinue
 
     if ($proc.ExitCode -ne 0) {
         Write-Error "ESP-IDF installer exited with code $($proc.ExitCode)."
@@ -159,21 +161,49 @@ if ($idfDir) {
     }
 
     $idfDir = $null
-    for ($attempt = 1; $attempt -le 5; $attempt++) {
+    for ($i = 1; $i -le 5; $i++) {
         $idfDir = Find-IdfInstall
         if ($idfDir) { break }
         Start-Sleep -Seconds 2
     }
-    if ($idfDir) {
-        Write-Ok "ESP-IDF installed at $idfDir"
-    } else {
+    if (-not $idfDir) {
         Write-Error "Installer completed but no ESP-IDF export.ps1 found. Check installer output."
         exit 1
     }
+    Write-Ok "ESP-IDF installed at $idfDir"
 }
 
 # ---------------------------------------------------------------------------
-# 4. usbipd-win
+# 4. ESP-IDF toolchains
+# ---------------------------------------------------------------------------
+Write-Step "Checking ESP-IDF toolchains..."
+
+$toolsPath = Find-IdfToolsPath $idfDir
+$xtensa    = if ($toolsPath) {
+    Get-ChildItem (Join-Path $toolsPath 'tools\xtensa-esp-elf') -ErrorAction SilentlyContinue | Select-Object -First 1
+} else { $null }
+
+if ($xtensa) {
+    Write-Ok "Toolchains found ($($xtensa.Name))"
+    if ($toolsPath) { Write-Host "    Tools path: $toolsPath" -ForegroundColor DarkGray }
+} else {
+    Write-Warn "Toolchains not installed - running install.bat for esp32 target..."
+    Write-Host "    This downloads ~500 MB of toolchain files." -ForegroundColor DarkGray
+    if ($toolsPath) {
+        $env:IDF_TOOLS_PATH = $toolsPath
+        Write-Host "    IDF_TOOLS_PATH: $toolsPath" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    $proc = Start-Process -FilePath "$idfDir\install.bat" -ArgumentList 'esp32' -Wait -PassThru -NoNewWindow
+    if ($proc.ExitCode -ne 0) {
+        Write-Error "install.bat failed (exit $($proc.ExitCode))."
+        exit 1
+    }
+    Write-Ok "Toolchains installed"
+}
+
+# ---------------------------------------------------------------------------
+# 5. usbipd-win
 # ---------------------------------------------------------------------------
 Write-Step "Checking usbipd-win..."
 if (Get-Command usbipd -ErrorAction SilentlyContinue) {
@@ -188,12 +218,18 @@ if (Get-Command usbipd -ErrorAction SilentlyContinue) {
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-$idfDir = Find-IdfInstall
+$idfDir    = Find-IdfInstall
+$toolsPath = if ($idfDir) { Find-IdfToolsPath $idfDir } else { $null }
+$venv      = if ($toolsPath) { Find-IdfVenv $toolsPath } else { $null }
 
 Write-Host ""
 Write-Host "-----------------------------------------------------------" -ForegroundColor Green
 Write-Host " All dependencies are installed." -ForegroundColor Green
 Write-Host "-----------------------------------------------------------" -ForegroundColor Green
+Write-Host ""
+Write-Host "  IDF source:  $idfDir"
+Write-Host "  Tools path:  $toolsPath"
+Write-Host "  Python venv: $venv"
 Write-Host ""
 Write-Host "Activate ESP-IDF in each new terminal before building:" -ForegroundColor Yellow
 Write-Host ""
