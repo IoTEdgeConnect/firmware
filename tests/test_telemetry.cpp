@@ -4,10 +4,10 @@
 // Compiled without ESP-IDF; stubs replace esp_random() and esp_timer_get_time().
 //
 // Build (from firmware root, requires a host C++ compiler):
-//   g++ -std=c++17 -I main -I $IDF_PATH/components/cjson/cJSON \
+//   g++ -std=c++17 -I main -I tests/stubs -I $IDF_PATH/components/json/cJSON \
 //       main/telemetry/telemetry_generator.cpp \
 //       main/telemetry/telemetry.cpp \
-//       $IDF_PATH/components/cjson/cJSON/cJSON.c \
+//       $IDF_PATH/components/json/cJSON/cJSON.c \
 //       tests/test_telemetry.cpp -o tests/test_telemetry && tests/test_telemetry
 
 #include <cassert>

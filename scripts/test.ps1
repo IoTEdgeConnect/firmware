@@ -73,6 +73,7 @@ if ($compiler.Type -eq 'gcc') {
     $buildArgs = @(
         '-std=c++17',
         "-I$root\main",
+        "-I$root\tests\stubs",
         "-I$cjsonDir",
         "$root\main\telemetry\telemetry_generator.cpp",
         "$root\main\telemetry\telemetry.cpp",
@@ -80,7 +81,8 @@ if ($compiler.Type -eq 'gcc') {
         $testSrc,
         "-o$testBin"
     )
-    & $compiler.Exe @buildArgs
+    Write-Host "    $($compiler.Exe) $buildArgs" -ForegroundColor DarkGray
+    & $compiler.Exe @buildArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
 } else {
     # MSVC
     $buildArgs = @(

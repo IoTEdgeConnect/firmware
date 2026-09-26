@@ -22,6 +22,7 @@ jobs:
         run: |
           g++ -std=c++17 \
               -I main \
+              -I tests/stubs \
               -I $IDF_PATH/components/json/cJSON \
               main/telemetry/telemetry_generator.cpp \
               main/telemetry/telemetry.cpp \
