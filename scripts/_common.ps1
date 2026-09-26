@@ -18,18 +18,20 @@ function Find-EspPort {
         Returns the first COM port whose VID:PID matches a known ESP32 adapter.
         Falls back to prompting the user if none is found automatically.
     #>
-    $ports = Get-WmiObject Win32_PnPEntity |
-        Where-Object { $_.Name -match 'COM\d+' } |
+
+    # Use Get-PnpDevice (avoids $pid reserved variable issue with WMI approach)
+    $ports = Get-PnpDevice -Class Ports -ErrorAction SilentlyContinue |
+        Where-Object { $_.FriendlyName -match 'COM\d+' } |
         ForEach-Object {
-            $name = $_.Name
-            $id   = $_.DeviceID
-            $com  = if ($name -match '\((COM\d+)\)') { $Matches[1] } else { $null }
-            $vid  = if ($id   -match 'VID_([0-9A-F]{4})') { $Matches[1] } else { $null }
-            $pid  = if ($id   -match 'PID_([0-9A-F]{4})') { $Matches[1] } else { $null }
-            if ($com -and $vid -and $pid) {
-                [PSCustomObject]@{ Port = $com; VidPid = "$($vid.ToUpper()):$($pid.ToUpper())"; Name = $name }
+            $name    = $_.FriendlyName
+            $id      = $_.InstanceId
+            $com     = if ($name    -match '\((COM\d+)\)')       { $Matches[1] } else { $null }
+            $vidHex  = if ($id      -match 'VID_([0-9A-Fa-f]{4})') { $Matches[1].ToUpper() } else { $null }
+            $pidHex  = if ($id      -match 'PID_([0-9A-Fa-f]{4})') { $Matches[1].ToUpper() } else { $null }
+            if ($com -and $vidHex -and $pidHex) {
+                [PSCustomObject]@{ Port = $com; VidPid = "${vidHex}:${pidHex}"; Name = $name }
             }
-        }
+        } | Where-Object { $_ }
 
     $esp = $ports | Where-Object { $ESP32_VIDPIDS -contains $_.VidPid }
 
