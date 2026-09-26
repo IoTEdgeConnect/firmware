@@ -68,18 +68,17 @@ if /i "%~1"=="wsl_attach" (
 if /i "%~1"=="setup" goto :run
 
 if "%IDF_PATH%"=="" (
-    set _IDF_EXPORT=%USERPROFILE%\esp\esp-idf\export.bat
-    if exist "!_IDF_EXPORT!" (
-        echo IDF_PATH not set — activating ESP-IDF from default location...
-        call "!_IDF_EXPORT!"
-    ) else (
+    :: Use PowerShell to glob-search known install locations
+    for /f "delims=" %%E in ('powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "@('C:\Espressif\frameworks\esp-idf-v*','%USERPROFILE%\esp\esp-idf','C:\esp\esp-idf') | ForEach-Object { Resolve-Path $_ -ErrorAction SilentlyContinue } | Where-Object { Test-Path (Join-Path $_ 'export.bat') } | Select-Object -First 1 -ExpandProperty Path"') do set _IDF_DIR=%%E
+    if "!_IDF_DIR!"=="" (
         echo.
         echo ERROR: ESP-IDF is not installed or not activated.
         echo        Run setup first:  scripts\run.cmd setup
-        echo        Then activate:    %USERPROFILE%\esp\esp-idf\export.bat
         echo.
         exit /b 1
     )
+    echo Activating ESP-IDF from !_IDF_DIR!...
+    call "!_IDF_DIR!\export.bat"
 )
 
 :run
