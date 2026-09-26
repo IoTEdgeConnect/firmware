@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace config {
 
 constexpr const char* DEVICE_ID            = "esp32-dev-001";
