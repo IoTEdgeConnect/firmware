@@ -1,6 +1,7 @@
 #include "telemetry.h"
 #include "config/device_config.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -30,8 +31,8 @@ char* telemetry_to_json(const Telemetry& t)
         return nullptr;
     }
 
-    cJSON_AddNumberToObject(measurements, "temperature_c", static_cast<double>(t.temperature_c));
-    cJSON_AddNumberToObject(measurements, "humidity_pct",  static_cast<double>(t.humidity_pct));
+    cJSON_AddNumberToObject(measurements, "temperature_c", static_cast<double>(roundf(t.temperature_c * 10.0f) / 10.0f));
+    cJSON_AddNumberToObject(measurements, "humidity_pct",  static_cast<double>(roundf(t.humidity_pct  * 10.0f) / 10.0f));
 
     char* json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
