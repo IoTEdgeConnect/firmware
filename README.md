@@ -39,12 +39,7 @@ Or use the convenience scripts (auto-detect port):
 .\scripts\flash_monitor.ps1
 ```
 
-```bash
-# WSL / Linux / macOS
-./scripts/flash_monitor.sh
-```
-
-Replace `<PORT>` with your serial port (e.g. `COM3`, `/dev/ttyUSB0`).
+Replace `<PORT>` with your serial port (e.g. `COM3`).
 
 ---
 

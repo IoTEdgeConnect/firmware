@@ -60,13 +60,8 @@ Convenience scripts in `scripts/` wrap the commands below and auto-detect the se
 | `scripts/flash.ps1` | Windows PowerShell | Flash |
 | `scripts/monitor.ps1` | Windows PowerShell | Monitor |
 | `scripts/flash_monitor.ps1` | Windows PowerShell | Flash + monitor |
-| `scripts/build.sh` | WSL / Linux / macOS | Build |
-| `scripts/flash.sh` | WSL / Linux / macOS | Flash |
-| `scripts/monitor.sh` | WSL / Linux / macOS | Monitor |
-| `scripts/flash_monitor.sh` | WSL / Linux / macOS | Flash + monitor |
 | `scripts/wsl_attach.ps1` | Windows PowerShell | Forward ESP32 USB to WSL |
 | `scripts/wsl_detach.ps1` | Windows PowerShell | Return ESP32 USB to Windows |
-| `scripts/wsl_setup.sh` | WSL (one-time) | Install WSL-side USB tools |
 
 See [WSL usage](wsl.md) for the full USB forwarding workflow.
 
