@@ -5,36 +5,53 @@
 | Tool | Version | Notes |
 |---|---|---|
 | Git | any | [git-scm.com](https://git-scm.com) |
-| Python | ≥ 3.8 | [python.org](https://python.org) |
-| ESP-IDF | v5.4 | Installed by `setup` script or manually |
-| CMake + Ninja | — | Bundled with ESP-IDF installer |
-| usbipd-win | ≥ 4.0 | Windows only, for WSL USB forwarding |
+| Python | any | Required by ESP-IDF; the offline installer bundles its own |
+| MSYS2 + g++ | any | For host-side unit tests; installed by `setup` |
+| ESP-IDF | v5.2 or later | Installed by `setup` to `C:\Espressif` |
+| CMake + Ninja | — | Bundled with the ESP-IDF offline installer |
+| usbipd-win | ≥ 4.0 | Windows only; for WSL USB forwarding |
 
-### First-time setup (Windows)
+---
 
-Run once after cloning. Installs ESP-IDF and usbipd-win automatically:
+## First-time Setup
+
+Run once after cloning. Checks and installs all dependencies automatically:
 
 ```cmd
 scripts\run.cmd setup
 ```
 
-This downloads the official ESP-IDF Windows installer (~5 min), installs the
-toolchain, and installs usbipd-win via winget.
-
-### Manual activation
-
-After setup, activate ESP-IDF in each new terminal before building:
-
-```powershell
-# PowerShell
-. $env:USERPROFILE\esp\esp-idf\export.ps1
-
-# cmd.exe
-%USERPROFILE%\esp\esp-idf\export.bat
+```mermaid
+flowchart TD
+    A[run.cmd setup] --> B{Git installed?}
+    B -->|No| C[winget install Git]
+    B -->|Yes| D{Python installed?}
+    C --> D
+    D -->|No| E[winget install Python 3.11]
+    D -->|Yes| F{g++ installed?}
+    E --> F
+    F -->|No| G[winget install MSYS2\npacman install mingw-w64-x86_64-gcc]
+    F -->|Yes| H{ESP-IDF found?}
+    G --> H
+    H -->|No| I[Download offline installer\nfrom GitHub releases API\nRun wizard]
+    H -->|Yes| J{Toolchains installed?}
+    I --> J
+    J -->|No| K[Run install.bat esp32]
+    J -->|Yes| L{usbipd-win installed?}
+    K --> L
+    L -->|No| M[winget install usbipd-win]
+    L -->|Yes| N[All dependencies ready]
+    M --> N
 ```
 
-The `run.cmd` script will attempt to activate IDF automatically if it finds
-it in the default location but `IDF_PATH` is not set.
+The setup script is idempotent — each step checks before acting, so re-running
+it after a partial install will complete the remaining steps without repeating
+completed ones.
+
+The ESP-IDF offline installer is resolved dynamically from the
+[espressif/idf-installer](https://github.com/espressif/idf-installer/releases)
+GitHub releases API, so it always fetches the latest stable version without
+any hardcoded URLs in the script.
 
 ---
 
@@ -42,40 +59,51 @@ it in the default location but `IDF_PATH` is not set.
 
 ```mermaid
 flowchart LR
-    A[Set target] --> B[Configure]
-    B --> C[Build]
-    C --> D[Flash]
-    D --> E[Monitor]
+    T[run.cmd test\nhost-side unit tests] --> B[run.cmd build\nidf.py build]
+    B --> F[run.cmd flash\nidf.py flash]
+    F --> M[run.cmd flash_monitor\nidf.py monitor]
 ```
 
----
-
-## Scripts
-
-Convenience scripts in `scripts/` wrap the commands below and auto-detect the serial port.
-
-| Script | Platform | Action |
-|---|---|---|
-| `scripts/build.ps1` | Windows PowerShell | Build |
-| `scripts/flash.ps1` | Windows PowerShell | Flash |
-| `scripts/monitor.ps1` | Windows PowerShell | Monitor |
-| `scripts/flash_monitor.ps1` | Windows PowerShell | Flash + monitor |
-| `scripts/wsl_attach.ps1` | Windows PowerShell | Forward ESP32 USB to WSL |
-| `scripts/wsl_detach.ps1` | Windows PowerShell | Return ESP32 USB to Windows |
-
-See [WSL usage](wsl.md) for the full USB forwarding workflow.
+`run.cmd build` automatically runs the host-side tests before invoking
+`idf.py build`. If the tests fail, the firmware build is aborted.
 
 ---
 
-## Commands
+## Scripts Reference
 
-### Set target
+All scripts are in `scripts/` and invoked via `scripts\run.cmd <command>`.
+See [Scripts](scripts.md) for full documentation.
+
+| Command | Action |
+|---|---|
+| `run.cmd setup` | Install all dependencies |
+| `run.cmd test` | Run host-side unit tests |
+| `run.cmd build` | Run tests then build firmware |
+| `run.cmd flash` | Flash to auto-detected ESP32 |
+| `run.cmd monitor` | Open serial monitor |
+| `run.cmd flash_monitor` | Flash then monitor |
+| `run.cmd wsl_attach` | Forward ESP32 USB to WSL |
+| `run.cmd wsl_detach` | Return ESP32 USB to Windows |
+
+---
+
+## Manual idf.py Commands
+
+If you prefer to invoke `idf.py` directly, activate ESP-IDF first:
+
+```powershell
+# PowerShell
+. C:\Espressif\frameworks\esp-idf-v5.2.8\export.ps1
+
+# cmd.exe
+C:\Espressif\frameworks\esp-idf-v5.2.8\export.bat
+```
+
+### Set target (once per checkout)
 
 ```bash
 idf.py set-target esp32
 ```
-
-Only required once per checkout, or after clearing the build directory.
 
 ### Build
 
@@ -89,7 +117,7 @@ idf.py build
 idf.py -p <PORT> flash
 ```
 
-Replace `<PORT>` with your serial port, for example:
+Replace `<PORT>` with your serial port:
 
 - Windows: `COM3`
 - Linux: `/dev/ttyUSB0`
@@ -101,7 +129,7 @@ Replace `<PORT>` with your serial port, for example:
 idf.py -p <PORT> monitor
 ```
 
-Press `Ctrl+]` to exit the monitor.
+Press `Ctrl+]` to exit.
 
 ### Flash and monitor in one step
 
@@ -109,31 +137,37 @@ Press `Ctrl+]` to exit the monitor.
 idf.py -p <PORT> flash monitor
 ```
 
----
-
-## Cleaning
+### Clean
 
 ```bash
 idf.py fullclean
 ```
 
-This removes the `build/` directory entirely. Re-run `set-target` afterwards.
+Removes the `build/` directory entirely. Re-run `set-target` afterwards.
 
 ---
 
-## WSL
-
-To flash and monitor from inside WSL, see [WSL usage](wsl.md).
-
----
-
-## Configuration
+## SDK Configuration
 
 Default SDK options are in [`sdkconfig.defaults`](../sdkconfig.defaults).
 The generated `sdkconfig` file is excluded from version control.
+
+Key defaults:
+
+| Setting | Value | Reason |
+|---|---|---|
+| `CONFIG_ESP_CONSOLE_UART_BAUDRATE` | 115200 | Standard serial monitor baud rate |
+| `CONFIG_LOG_DEFAULT_LEVEL` | INFO | Avoids debug noise in normal operation |
+| `CONFIG_BT_ENABLED` | n | Bluetooth not required; reduces binary size |
 
 To open the interactive configuration menu:
 
 ```bash
 idf.py menuconfig
 ```
+
+---
+
+## WSL
+
+To build, flash and monitor from inside WSL, see [WSL Usage](wsl.md).

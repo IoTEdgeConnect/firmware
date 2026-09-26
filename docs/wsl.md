@@ -2,7 +2,7 @@
 
 WSL 2 does not expose USB devices by default.
 [usbipd-win](https://github.com/dorssel/usbipd-win) forwards a USB device from
-Windows into a WSL distro over the USB/IP protocol, making it appear as a normal
+Windows into WSL over the USB/IP protocol, making it appear as a normal
 `/dev/ttyUSB*` or `/dev/ttyACM*` device inside WSL.
 
 ---
@@ -11,25 +11,23 @@ Windows into a WSL distro over the USB/IP protocol, making it appear as a normal
 
 | Component | Where | Install |
 |---|---|---|
-| usbipd-win ≥ 4.0 | Windows | `winget install usbipd` |
-| linux-tools-generic | WSL | `scripts/wsl_setup.sh` (see below) |
-| hwdata | WSL | included in `wsl_setup.sh` |
+| usbipd-win ≥ 4.0 | Windows | `winget install usbipd` or `scripts\run.cmd setup` |
+| linux-tools-generic | WSL | `sudo apt install linux-tools-generic hwdata` |
 
-Your WSL kernel must be 5.10.60 or later — the kernel shipped with Ubuntu 24.04
+Your WSL kernel must be 5.10.60 or later. The kernel shipped with Ubuntu 24.04
 on WSL 2 (`6.6.x`) satisfies this.
 
----
-
-## One-time WSL Setup
+### One-time WSL setup
 
 Run once inside your WSL distro:
 
 ```bash
-bash scripts/wsl_setup.sh
+sudo apt update
+sudo apt install linux-tools-generic hwdata
+sudo usermod -aG dialout $USER
 ```
 
-This installs the usbip client tools and adds your user to the `dialout` group.
-Close and reopen the WSL terminal afterwards for the group change to take effect.
+Close and reopen the WSL terminal for the group change to take effect.
 
 ---
 
@@ -42,13 +40,14 @@ sequenceDiagram
     participant L as WSL
 
     W->>W: Plug in ESP32
-    W->>U: wsl_attach.ps1 (bind + attach)
+    W->>U: run.cmd wsl_attach
+    note over W,U: Elevated UAC prompt for bind step
     U->>L: USB/IP forward
     L->>L: /dev/ttyUSB0 appears
-    L->>L: flash_monitor.sh
-    L->>L: idf.py flash monitor
+    note over L: Flash and monitor from WSL
+    L->>L: idf.py -p /dev/ttyUSB0 flash monitor
     L->>W: Ctrl+] exits monitor
-    W->>U: wsl_detach.ps1
+    W->>U: run.cmd wsl_detach
     U->>W: Device returned to Windows
 ```
 
@@ -58,21 +57,17 @@ sequenceDiagram
 
 From PowerShell on Windows:
 
-```powershell
-.\scripts\wsl_attach.ps1
+```cmd
+scripts\run.cmd wsl_attach
 ```
 
-The script auto-detects the ESP32 by VID:PID and attaches it to `Ubuntu-24.04`
-by default. To target a different distro:
-
-```powershell
-.\scripts\wsl_attach.ps1 -Distro Ubuntu-20.04
-```
+The script auto-detects the ESP32 by VID:PID. `run.cmd` relaunches the script
+elevated automatically — a UAC prompt will appear for the `usbipd bind` step.
 
 To specify the bus ID manually (from `usbipd list`):
 
-```powershell
-.\scripts\wsl_attach.ps1 -BusId 2-3
+```cmd
+scripts\run.cmd wsl_attach -BusId 2-3
 ```
 
 Verify the device is visible in WSL:
@@ -85,12 +80,14 @@ ls /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
 
 ## Flashing and Monitoring from WSL
 
-```bash
-./scripts/flash_monitor.sh
-```
+With the device attached, use `idf.py` directly inside WSL:
 
-The script auto-detects `/dev/ttyUSB0` or `/dev/ttyACM0`.
-Override with `PORT=/dev/ttyUSB1 ./scripts/flash_monitor.sh`.
+```bash
+# Activate ESP-IDF first
+. $IDF_PATH/export.sh
+
+idf.py -p /dev/ttyUSB0 flash monitor
+```
 
 ---
 
@@ -98,8 +95,8 @@ Override with `PORT=/dev/ttyUSB1 ./scripts/flash_monitor.sh`.
 
 When finished, return the device to Windows:
 
-```powershell
-.\scripts\wsl_detach.ps1
+```cmd
+scripts\run.cmd wsl_detach
 ```
 
 ---
@@ -108,17 +105,17 @@ When finished, return the device to Windows:
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `No serial device found` in WSL | Device not attached | Run `wsl_attach.ps1` |
-| `Permission denied` on `/dev/ttyUSB0` | User not in `dialout` group | Run `wsl_setup.sh`, reopen terminal |
+| No `/dev/ttyUSB*` in WSL | Device not attached | Run `run.cmd wsl_attach` |
+| `Permission denied` on `/dev/ttyUSB0` | User not in `dialout` group | `sudo usermod -aG dialout $USER`, reopen terminal |
 | `usbipd: command not found` on Windows | usbipd-win not installed | `winget install usbipd` |
+| Script hangs with no UAC prompt | Elevation not triggering | Run PowerShell as Administrator and retry |
 | Device attaches but immediately disconnects | Another process holds the port | Close any open monitors on Windows |
-| `bind` step fails silently | Needs elevation | Run PowerShell as Administrator for the bind step, or use `usbipd bind --busid <id>` in an elevated prompt once |
 
 ---
 
 ## Known VID:PID Values
 
-The scripts recognise the following USB-to-serial adapters automatically:
+The `wsl_attach.ps1` script recognises the following USB-to-serial adapters:
 
 | Chip | VID:PID | Common boards |
 |---|---|---|

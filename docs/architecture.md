@@ -3,32 +3,106 @@
 ## Overview
 
 IoTEdgeConnect firmware is a minimal ESP-IDF application targeting the ESP32.
-Phase 1 establishes the core structure: a FreeRTOS telemetry task that generates
-simulated environmental data and emits it as JSON over the serial console.
+It is designed to grow incrementally — each phase adds a well-defined capability
+without requiring the existing structure to be rewritten.
 
-The design deliberately separates concerns so that later phases can replace the
-simulated data source with real hardware sensors without restructuring the application.
+Phase 1 establishes the foundational layer: a FreeRTOS telemetry task that generates
+simulated environmental data and emits it as JSON over the serial console. Every
+subsequent phase builds on top of this layer rather than replacing it.
 
 ---
 
-## Module Structure
+## Guiding Principles
+
+The architecture is governed by three rules that apply across all phases:
+
+1. **Separation of concerns** — data generation, serialisation, and transport are
+   independent. Replacing one does not require touching the others.
+2. **Transport agnosticism** — the `Telemetry` struct carries measurements only.
+   It has no knowledge of JSON, MQTT, HTTP, or any other transport.
+3. **Incremental extension** — new capabilities are added as new modules. Existing
+   modules are not restructured to accommodate them.
+
+---
+
+## Current Module Structure (Phase 1)
 
 ```mermaid
 graph TD
-    A[app_main.cpp] -->|creates task| B[telemetry_task]
-    B -->|calls| C[TelemetryGenerator]
-    B -->|calls| D[telemetry_to_json]
-    C -->|returns| E[Telemetry struct]
-    D -->|takes| E
-    D -->|returns| F[JSON string → serial]
-
-    subgraph config
-        G[device_config.h]
+    subgraph entry [Entry Point]
+        APP[app_main.cpp]
     end
 
-    A -.->|reads| G
-    B -.->|reads| G
-    D -.->|reads| G
+    subgraph task [FreeRTOS Task]
+        TASK[telemetry_task]
+    end
+
+    subgraph generation [Telemetry Generation]
+        GEN[TelemetryGenerator\ntelemetry_generator.cpp]
+        STRUCT[Telemetry struct\ntelemetry.h]
+    end
+
+    subgraph serialisation [Serialisation]
+        SER[telemetry_to_json\ntelemetry.cpp]
+        CJSON[cJSON\nESP-IDF component]
+    end
+
+    subgraph config [Configuration]
+        CFG[device_config.h\nDEVICE_ID · VERSION · INTERVAL]
+    end
+
+    subgraph output [Output]
+        UART[Serial console\nprintf]
+    end
+
+    APP -->|xTaskCreate| TASK
+    TASK -->|next| GEN
+    GEN -->|returns| STRUCT
+    TASK -->|telemetry_to_json| SER
+    STRUCT -->|passed to| SER
+    SER -->|uses| CJSON
+    SER -->|returns char star| TASK
+    TASK -->|printf + free| UART
+
+    APP -.->|reads| CFG
+    TASK -.->|reads| CFG
+    SER -.->|reads| CFG
+```
+
+---
+
+## File Layout
+
+```
+firmware/
+├── CMakeLists.txt                  Top-level ESP-IDF project
+├── sdkconfig.defaults              Default SDK configuration
+│
+├── main/
+│   ├── CMakeLists.txt              Component registration
+│   ├── app_main.cpp                Entry point; creates telemetry task
+│   │
+│   ├── config/
+│   │   └── device_config.h         Single source of truth for device identity,
+│   │                               firmware version and telemetry interval
+│   │
+│   └── telemetry/
+│       ├── telemetry.h             Telemetry struct + telemetry_to_json declaration
+│       ├── telemetry.cpp           JSON serialisation via cJSON
+│       ├── telemetry_generator.h   TelemetryGenerator class declaration
+│       └── telemetry_generator.cpp Stateful simulated data generation
+│
+├── tests/
+│   ├── stubs/                      Host-side ESP-IDF header stubs
+│   │   ├── esp_log.h               No-op logging macros
+│   │   ├── esp_random.h            Declares esp_random()
+│   │   └── esp_timer.h             Declares esp_timer_get_time()
+│   └── test_telemetry.cpp          Host-side unit tests (1 014 assertions)
+│
+├── scripts/                        Developer convenience scripts
+│   └── ...                         See docs/scripts.md
+│
+└── .github/workflows/ci.yml        CI: host tests + firmware build
 ```
 
 ---
@@ -41,16 +115,26 @@ sequenceDiagram
     participant T as telemetry_task
     participant G as TelemetryGenerator
     participant S as telemetry_to_json
+    participant C as Serial console
 
-    M->>M: Log startup info
-    M->>T: xTaskCreate()
-    loop Every TELEMETRY_INTERVAL_MS
-        T->>T: vTaskDelayUntil()
+    M->>M: Log startup info (device ID, version, interval)
+    M->>T: xTaskCreate(telemetry_task, stack=4096, priority=5)
+
+    loop Every TELEMETRY_INTERVAL_MS (5 000 ms)
+        T->>T: vTaskDelayUntil() — stable interval regardless of processing time
         T->>G: next()
-        G-->>T: Telemetry sample
+        G->>G: increment sequence
+        G->>G: apply random delta + clamp
+        G->>G: read esp_timer_get_time()
+        G-->>T: Telemetry { sequence, uptime_ms, temperature_c, humidity_pct }
         T->>S: telemetry_to_json(sample)
-        S-->>T: JSON string
-        T->>T: printf + free
+        S->>S: cJSON_CreateObject()
+        S->>S: add fields + measurements sub-object
+        S->>S: cJSON_PrintUnformatted()
+        S->>S: cJSON_Delete()
+        S-->>T: heap-allocated JSON string
+        T->>C: printf("%s\n", json)
+        T->>T: free(json)
     end
 ```
 
@@ -60,13 +144,68 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    RNG[esp_random] --> GEN[TelemetryGenerator\nstateful drift]
-    TIMER[esp_timer_get_time] --> GEN
-    GEN --> STRUCT[Telemetry struct\nsequence · uptime_ms\ntemperature_c · humidity_pct]
-    STRUCT --> SER[telemetry_to_json\ncJSON]
-    CFG[device_config.h\ndevice_id · schema_version] --> SER
-    SER --> UART[Serial console\ncompact JSON]
+    RNG([esp_random\nHW RNG]) --> DELTA[random_delta\nmin/max magnitude\nrandom sign]
+    TIMER([esp_timer_get_time\nmonotonic clock]) --> UPTIME[uptime_ms\ndivide by 1000]
+
+    DELTA --> TEMP[temperature_c\n±0.1–0.3 °C per sample\nclamped 15–35 °C]
+    DELTA --> HUM[humidity_pct\n±0.2–1.0 % per sample\nclamped 20–80 %]
+    UPTIME --> STRUCT
+
+    TEMP --> STRUCT[Telemetry struct]
+    HUM --> STRUCT
+    SEQ([sequence\nmonotonic uint64]) --> STRUCT
+
+    STRUCT --> ROUND[roundf × 10 ÷ 10\n1 d.p. precision]
+    ROUND --> CJSON[cJSON\nPrintUnformatted]
+    CFG([device_config.h\nDEVICE_ID\nschema_version=1]) --> CJSON
+
+    CJSON --> JSON[Compact JSON string\nheap-allocated]
+    JSON --> UART([Serial console\nprintf + free])
 ```
+
+---
+
+## The Telemetry Struct
+
+```cpp
+struct Telemetry {
+    uint64_t sequence;       // monotonically increasing, resets on reboot
+    int64_t  uptime_ms;      // milliseconds since boot (esp_timer_get_time / 1000)
+    float    temperature_c;  // degrees Celsius
+    float    humidity_pct;   // relative humidity percentage
+};
+```
+
+The struct is deliberately transport-agnostic. It carries measurements only —
+no JSON keys, no MQTT topics, no AWS shadow fields. This means the same struct
+can be passed to any serialiser or transport added in future phases.
+
+---
+
+## JSON Schema (v1)
+
+```json
+{
+  "schema_version": 1,
+  "device_id":      "esp32-dev-001",
+  "sequence":       42,
+  "uptime_ms":      210000,
+  "simulated":      true,
+  "measurements": {
+    "temperature_c": 22.4,
+    "humidity_pct":  53.1
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema_version` | integer | Always `1` in Phase 1. Increment when the schema changes. |
+| `device_id` | string | From `config::DEVICE_ID`. Will be provisioned dynamically in a later phase. |
+| `sequence` | integer | Resets to 1 on reboot. Persistent sequence tracking is a future concern. |
+| `uptime_ms` | integer | Milliseconds since boot. Wall-clock time added in Phase 2. |
+| `simulated` | boolean | `true` while using `TelemetryGenerator`. Set to `false` when real sensors are connected. |
+| `measurements` | object | Extensible sub-object. Additional sensor fields added here in future phases. |
 
 ---
 
@@ -74,33 +213,64 @@ flowchart LR
 
 | Decision | Rationale |
 |---|---|
-| `Telemetry` struct is transport-agnostic | Allows the same struct to be used with MQTT, HTTP or any future transport without modification |
-| `telemetry_to_json` is a free function, not a method | Keeps serialisation separate from data; the struct has no knowledge of JSON |
+| `Telemetry` struct is transport-agnostic | The same struct is passed to any serialiser or transport without modification |
+| `telemetry_to_json` is a free function | Serialisation is separate from data; the struct has no knowledge of JSON |
 | `TelemetryGenerator` holds state | Produces realistic drift rather than uncorrelated random values each sample |
-| `vTaskDelayUntil` rather than `vTaskDelay` | Keeps the reporting interval stable regardless of processing time |
-| cJSON via ESP-IDF `json` component | Supported, well-tested, already present in the IDF; no extra dependency |
+| `vTaskDelayUntil` not `vTaskDelay` | Keeps the reporting interval stable regardless of how long serialisation takes |
+| cJSON via ESP-IDF `json` component | Already present in the IDF; no extra dependency to manage |
 | Single FreeRTOS task | Sufficient for Phase 1; avoids premature complexity |
+| `simulated: true` flag in JSON | Allows the platform to distinguish test data from real sensor data at ingestion |
+| `schema_version: 1` in JSON | Enables schema evolution without breaking consumers |
+| Float rounded to 1 d.p. | cJSON's default double formatting produces excessive precision (e.g. `21.830028533935547`) |
 
 ---
 
-## File Layout
+## Extensibility: How Future Phases Plug In
 
+The architecture is designed so that each new phase adds a module rather than
+modifying existing ones. The diagram below shows the intended growth path.
+
+```mermaid
+flowchart TD
+    subgraph phase1 [Phase 1 — Current]
+        GEN[TelemetryGenerator\nsimulated]
+        STRUCT[Telemetry struct]
+        SER[telemetry_to_json]
+        UART[Serial console]
+        GEN --> STRUCT --> SER --> UART
+    end
+
+    subgraph phase2 [Phase 2 — Network and Time]
+        WIFI[Wi-Fi manager]
+        NTP[NTP sync\nwall-clock timestamp]
+        WIFI --> NTP
+    end
+
+    subgraph phase3 [Phase 3 — Cloud Connectivity]
+        MQTT[MQTT client\nAWS IoT Core]
+        SHADOW[Device shadow]
+        MQTT --> SHADOW
+    end
+
+    subgraph phasefuture [Future Phases]
+        SENSOR[Real sensor driver\nreplaces TelemetryGenerator]
+        OTA[OTA update manager]
+        PROV[Device provisioning]
+    end
+
+    phase1 -->|adds timestamp field| phase2
+    phase2 -->|adds transport| phase3
+    phase3 -->|replaces simulated source| phasefuture
 ```
-firmware/
-├── .amazonq/rules/project.md   ← workspace rules
-├── .github/workflows/ci.yml    ← CI build
-├── CMakeLists.txt              ← top-level ESP-IDF project
-├── sdkconfig.defaults          ← default SDK options
-├── main/
-│   ├── CMakeLists.txt
-│   ├── app_main.cpp            ← entry point, task creation
-│   ├── config/
-│   │   └── device_config.h     ← device ID, version, interval
-│   └── telemetry/
-│       ├── telemetry.h         ← Telemetry struct + serialisation declaration
-│       ├── telemetry.cpp       ← JSON serialisation (cJSON)
-│       ├── telemetry_generator.h
-│       └── telemetry_generator.cpp  ← stateful simulated data
-└── tests/
-    └── test_telemetry.cpp      ← host-side unit tests
-```
+
+**Phase 2** adds a Wi-Fi manager and NTP client. The `Telemetry` struct gains a
+`timestamp_utc` field. `telemetry_to_json` is updated to include it. No other
+existing code changes.
+
+**Phase 3** adds an MQTT transport. `telemetry_to_json` output is published to
+AWS IoT Core instead of (or in addition to) the serial console. The generator
+and struct are unchanged.
+
+**Future phases** replace `TelemetryGenerator` with a real sensor driver. Because
+the generator and the task are separate, only the generator is swapped out. The
+task, serialiser, and transport are unaffected.
