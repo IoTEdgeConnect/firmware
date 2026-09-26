@@ -4,20 +4,37 @@
 
 | Tool | Version | Notes |
 |---|---|---|
-| ESP-IDF | v5.2 or later | [Installation guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/) |
-| CMake | ≥ 3.16 | Bundled with ESP-IDF |
-| Python | ≥ 3.8 | Required by `idf.py` |
-| USB driver | — | CP210x or CH340 depending on your dev board |
+| Git | any | [git-scm.com](https://git-scm.com) |
+| Python | ≥ 3.8 | [python.org](https://python.org) |
+| ESP-IDF | v5.4 | Installed by `setup` script or manually |
+| CMake + Ninja | — | Bundled with ESP-IDF installer |
+| usbipd-win | ≥ 4.0 | Windows only, for WSL USB forwarding |
 
-Ensure the IDF environment is activated before running any `idf.py` command:
+### First-time setup (Windows)
 
-```bash
-# Linux / macOS
-. $IDF_PATH/export.sh
+Run once after cloning. Installs ESP-IDF and usbipd-win automatically:
 
-# Windows (PowerShell)
-$IDF_PATH\export.ps1
+```cmd
+scripts\run.cmd setup
 ```
+
+This downloads the official ESP-IDF Windows installer (~5 min), installs the
+toolchain, and installs usbipd-win via winget.
+
+### Manual activation
+
+After setup, activate ESP-IDF in each new terminal before building:
+
+```powershell
+# PowerShell
+. $env:USERPROFILE\esp\esp-idf\export.ps1
+
+# cmd.exe
+%USERPROFILE%\esp\esp-idf\export.bat
+```
+
+The `run.cmd` script will attempt to activate IDF automatically if it finds
+it in the default location but `IDF_PATH` is not set.
 
 ---
 

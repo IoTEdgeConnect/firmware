@@ -3,36 +3,84 @@
 :: Launches any script in this directory with a temporary PowerShell execution
 :: policy bypass (Process scope only — no permanent system change).
 ::
-:: Usage:
-::   scripts\run.cmd wsl_attach
-::   scripts\run.cmd flash_monitor
-::   scripts\run.cmd flash  -Port COM3
+:: First time setup:
+::   scripts\run.cmd setup
 ::
-:: The .ps1 extension is added automatically.
+:: Usage:
+::   scripts\run.cmd build
+::   scripts\run.cmd flash            [-Port COMx]
+::   scripts\run.cmd monitor          [-Port COMx]
+::   scripts\run.cmd flash_monitor    [-Port COMx]
+::   scripts\run.cmd wsl_attach       [-BusId <id>]
+::   scripts\run.cmd wsl_detach       [-BusId <id>]
+
+setlocal EnableDelayedExpansion
 
 if "%~1"=="" (
-    echo Usage: scripts\run.cmd ^<script-name^> [args]
     echo.
-    echo Available scripts:
-    echo   build
-    echo   flash            [-Port COMx]
-    echo   monitor          [-Port COMx]
-    echo   flash_monitor    [-Port COMx]
-    echo   wsl_attach       [-Distro ^<name^>] [-BusId ^<id^>]
-    echo   wsl_detach       [-BusId ^<id^>]
-    exit /b 1
+    echo  IoTEdgeConnect firmware scripts
+    echo  --------------------------------
+    echo  First time?  scripts\run.cmd setup
+    echo.
+    echo  Usage: scripts\run.cmd ^<script^> [args]
+    echo.
+    echo  Scripts:
+    echo    setup                          Install all dependencies
+    echo    build                          Build firmware
+    echo    flash            [-Port COMx]  Flash to ESP32
+    echo    monitor          [-Port COMx]  Open serial monitor
+    echo    flash_monitor    [-Port COMx]  Flash then monitor
+    echo    wsl_attach       [-BusId ^<id^>] Forward ESP32 USB to WSL
+    echo    wsl_detach       [-BusId ^<id^>] Return ESP32 USB to Windows
+    echo.
+    exit /b 0
 )
 
 set SCRIPT=%~dp0%~1.ps1
 
 if not exist "%SCRIPT%" (
-    echo ERROR: Script not found: %SCRIPT%
+    echo ERROR: Unknown command "%~1". Run scripts\run.cmd with no arguments for help.
     exit /b 1
 )
 
-:: Shift the script name out of the argument list so %* contains only the remainder.
-set ARGS=%*
-:: Remove the first token (script name) from ARGS
-for /f "tokens=1,*" %%a in ("%ARGS%") do set ARGS=%%b
+:: Strip script name from args
+set ARGS=
+for /f "tokens=1,*" %%a in ("%*") do set ARGS=%%b
 
+:: -----------------------------------------------------------------------
+:: wsl_attach needs admin — relaunch elevated if not already
+:: -----------------------------------------------------------------------
+if /i "%~1"=="wsl_attach" (
+    net session >nul 2>&1
+    if errorlevel 1 (
+        echo Relaunching as Administrator for wsl_attach...
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+            "Start-Process cmd.exe -ArgumentList '/k cd /d \"%CD%\" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%SCRIPT%\" %ARGS%' -Verb RunAs"
+        exit /b
+    )
+    goto :run
+)
+
+:: -----------------------------------------------------------------------
+:: For build/flash/monitor commands, ensure IDF is activated.
+:: If IDF_PATH is not set but the default install location exists, activate it.
+:: -----------------------------------------------------------------------
+if /i "%~1"=="setup" goto :run
+
+if "%IDF_PATH%"=="" (
+    set _IDF_EXPORT=%USERPROFILE%\esp\esp-idf\export.bat
+    if exist "!_IDF_EXPORT!" (
+        echo IDF_PATH not set — activating ESP-IDF from default location...
+        call "!_IDF_EXPORT!"
+    ) else (
+        echo.
+        echo ERROR: ESP-IDF is not installed or not activated.
+        echo        Run setup first:  scripts\run.cmd setup
+        echo        Then activate:    %USERPROFILE%\esp\esp-idf\export.bat
+        echo.
+        exit /b 1
+    )
+)
+
+:run
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %ARGS%
