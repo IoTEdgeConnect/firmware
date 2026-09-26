@@ -2,46 +2,31 @@
 # Build and run host-side unit tests for IoTEdgeConnect firmware.
 # Does not require an ESP32 or ESP-IDF to be activated.
 #
-# Requires a host C++ compiler:
-#   - Windows: MSVC (cl.exe) via Visual Studio, or g++ via MSYS2/MinGW
-#
 # Usage:
 #   scripts\run.cmd test
 
 [CmdletBinding()]
 param()
 
-$ErrorActionPreference = 'Stop'
-$root     = "$PSScriptRoot\.."
-$testSrc  = "$root\tests\test_telemetry.cpp"
-$testBin  = "$root\tests\test_telemetry.exe"
+$root    = (Get-Item "$PSScriptRoot\..").FullName
+$testSrc = Join-Path $root 'tests\test_telemetry.cpp'
+$testBin = Join-Path $root 'tests\test_telemetry.exe'
 
-function Find-Compiler {
-    # Check PATH first
-    if (Get-Command g++ -ErrorAction SilentlyContinue) {
-        return [PSCustomObject]@{ Exe = (Get-Command g++).Source; Type = 'gcc' }
-    }
-    if (Get-Command cl -ErrorAction SilentlyContinue) {
-        return [PSCustomObject]@{ Exe = (Get-Command cl).Source; Type = 'msvc' }
-    }
-    # Fall back to known MSYS2 install location even if not on PATH yet
-    $msys2Gpp = 'C:\msys64\mingw64\bin\g++.exe'
-    if (Test-Path $msys2Gpp) {
-        return [PSCustomObject]@{ Exe = $msys2Gpp; Type = 'gcc' }
-    }
-    return $null
+# Ensure MSYS2 MinGW is on PATH for this session even if setup was just run
+$msys2Bin = 'C:\msys64\mingw64\bin'
+if ((Test-Path $msys2Bin) -and ($env:PATH -notlike "*$msys2Bin*")) {
+    $env:PATH = "$msys2Bin;$env:PATH"
 }
 
 function Find-CJson {
-    # Look for cJSON.c in common ESP-IDF install locations
     $candidates = @(
         'C:\Espressif\frameworks\esp-idf-v*\components\json\cJSON\cJSON.c',
         "$env:USERPROFILE\esp\esp-idf\components\json\cJSON\cJSON.c",
         'C:\esp\esp-idf\components\json\cJSON\cJSON.c'
     )
-    foreach ($pattern in $candidates) {
-        $resolved = Resolve-Path $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($resolved) { return $resolved.Path }
+    foreach ($p in $candidates) {
+        $r = Resolve-Path $p -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($r) { return [string]$r.Path }
     }
     return $null
 }
@@ -49,64 +34,31 @@ function Find-CJson {
 Write-Host ""
 Write-Host "==> Running host-side unit tests" -ForegroundColor Cyan
 
-$compiler = Find-Compiler
-if (-not $compiler) {
-    Write-Host "    !! No C++ compiler found." -ForegroundColor Yellow
-    Write-Host "       Install g++ via MSYS2 (pacman -S mingw-w64-x86_64-gcc)" -ForegroundColor Yellow
-    Write-Host "       or Visual Studio Build Tools." -ForegroundColor Yellow
+if (-not (Get-Command g++ -ErrorAction SilentlyContinue)) {
+    Write-Host "    !! g++ not found. Run: scripts\run.cmd setup" -ForegroundColor Yellow
     exit 1
 }
-Write-Host "    Compiler: $($compiler.Exe)" -ForegroundColor DarkGray
+Write-Host "    Compiler: $(Get-Command g++ | Select-Object -ExpandProperty Source)" -ForegroundColor DarkGray
 
 $cjson = Find-CJson
 if (-not $cjson) {
-    Write-Host "    !! cJSON.c not found. Run 'scripts\run.cmd setup' first." -ForegroundColor Yellow
+    Write-Host "    !! cJSON.c not found. Run: scripts\run.cmd setup" -ForegroundColor Yellow
     exit 1
 }
-$cjsonDir = Split-Path $cjson
 Write-Host "    cJSON:    $cjson" -ForegroundColor DarkGray
+$cjsonDir = Split-Path $cjson
 
-# Build
 Write-Host "    Compiling..." -ForegroundColor DarkGray
 
-if ($compiler.Type -eq 'gcc') {
-    $buildArgs = @(
-        '-std=c++17',
-        "-I$root\main",
-        "-I$root\tests\stubs",
-        "-I$cjsonDir",
-        "$root\main\telemetry\telemetry_generator.cpp",
-        "$root\main\telemetry\telemetry.cpp",
-        $cjson,
-        $testSrc,
-        "-o$testBin"
-    )
-    Write-Host "    $($compiler.Exe) $buildArgs" -ForegroundColor DarkGray
-    & $compiler.Exe @buildArgs 2>&1 | ForEach-Object { Write-Host "    $_" }
-} else {
-    # MSVC
-    $buildArgs = @(
-        '/std:c++17',
-        '/EHsc',
-        "/I$root\main",
-        "/I$cjsonDir",
-        "$root\main\telemetry\telemetry_generator.cpp",
-        "$root\main\telemetry\telemetry.cpp",
-        $cjson,
-        $testSrc,
-        "/Fe$testBin"
-    )
-    & cl @buildArgs
-}
+# test_telemetry.cpp includes the .cpp files directly so only pass cJSON and the test file
+g++ -std=c++17 "-I$root\main" "-I$root\tests\stubs" "-I$cjsonDir" $cjson $testSrc -o $testBin
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host ""
     Write-Host "    FAIL: Compilation failed." -ForegroundColor Red
     exit 1
 }
 
-# Run
-Write-Host "    Running tests..." -ForegroundColor DarkGray
+Write-Host "    Running..." -ForegroundColor DarkGray
 & $testBin
 $result = $LASTEXITCODE
 Remove-Item $testBin -ErrorAction SilentlyContinue
@@ -114,6 +66,6 @@ Remove-Item $testBin -ErrorAction SilentlyContinue
 if ($result -eq 0) {
     Write-Host "    PASS" -ForegroundColor Green
 } else {
-    Write-Host "    FAIL: Tests failed." -ForegroundColor Red
+    Write-Host "    FAIL" -ForegroundColor Red
     exit 1
 }
