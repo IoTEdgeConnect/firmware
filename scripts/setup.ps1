@@ -1,4 +1,4 @@
-# scripts/setup.ps1
+﻿# scripts/setup.ps1
 # Check and install all dependencies required to build and flash IoTEdgeConnect firmware.
 # Safe to re-run at any time - each step checks before acting.
 #
@@ -146,7 +146,7 @@ Write-Step "Checking ESP-IDF source..."
 $idfDir = Find-IdfInstall
 
 if ($idfDir) {
-    $ver = if (Test-Path "$idfDir\version.txt") { (Get-Content "$idfDir\version.txt" -Raw).Trim() } else { 'unknown version' }
+    $ver = if ($idfDir -match 'esp-idf-v([\d.]+)') { $Matches[1] } elseif (Test-Path "$idfDir\version.txt") { (Get-Content "$idfDir\version.txt" -Raw).Trim() } else { 'unknown version' }
     Write-Ok "ESP-IDF found at $idfDir ($ver)"
 } else {
     Write-Warn "ESP-IDF not found - resolving latest offline installer..."
