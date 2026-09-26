@@ -193,19 +193,32 @@ can be passed to any serialiser or transport added in future phases.
   "simulated":      true,
   "measurements": {
     "temperature_c": 22.4,
-    "humidity_pct":  53.1
+    "humidity_pct":  53.1,
+    "pressure_hpa":  1013.25,
+    "co2_ppm":       412,
+    "light_lux":     487.5,
+    "voc_index":     103,
+    "battery_mv":    4150,
+    "rssi_dbm":      -67
   }
 }
 ```
 
-| Field | Type | Notes |
-|---|---|---|
-| `schema_version` | integer | Always `1` in Phase 1. Increment when the schema changes. |
-| `device_id` | string | From `config::DEVICE_ID`. Will be provisioned dynamically in a later phase. |
-| `sequence` | integer | Resets to 1 on reboot. Persistent sequence tracking is a future concern. |
-| `uptime_ms` | integer | Milliseconds since boot. Wall-clock time added in Phase 2. |
-| `simulated` | boolean | `true` while using `TelemetryGenerator`. Set to `false` when real sensors are connected. |
-| `measurements` | object | Extensible sub-object. Additional sensor fields added here in future phases. |
+| Field | Type | Precision | Notes |
+|---|---|---|---|
+| `schema_version` | integer | — | Always `1` in Phase 1 |
+| `device_id` | string | — | From `config::DEVICE_ID` |
+| `sequence` | integer | — | Resets to 1 on reboot |
+| `uptime_ms` | integer | — | Milliseconds since boot |
+| `simulated` | boolean | — | `true` while using `TelemetryGenerator` |
+| `temperature_c` | float | 1 d.p. | Degrees Celsius, range 15–35 |
+| `humidity_pct` | float | 1 d.p. | Relative humidity %, range 20–80 |
+| `pressure_hpa` | float | 2 d.p. | Barometric pressure hPa, range 970–1050 |
+| `co2_ppm` | float | 0 d.p. | CO₂ concentration ppm, range 350–2000 |
+| `light_lux` | float | 1 d.p. | Ambient light lux, range 0–10 000 |
+| `voc_index` | float | 0 d.p. | VOC index (Sensirion scale 1–500) |
+| `battery_mv` | float | 0 d.p. | Battery voltage mV, drains from 4200 to 3000 |
+| `rssi_dbm` | integer | — | Simulated Wi-Fi RSSI dBm, range −90 to −30 |
 
 ---
 

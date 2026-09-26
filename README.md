@@ -65,9 +65,9 @@ I (...) IOTEDGE: Device: esp32-dev-001
 I (...) IOTEDGE: Firmware: 0.1.0
 I (...) IOTEDGE: Telemetry interval: 5000 ms
 
-{"schema_version":1,"device_id":"esp32-dev-001","sequence":1,"uptime_ms":5042,"simulated":true,"measurements":{"temperature_c":21.8,"humidity_pct":49.2}}
-{"schema_version":1,"device_id":"esp32-dev-001","sequence":2,"uptime_ms":10042,"simulated":true,"measurements":{"temperature_c":22.0,"humidity_pct":50.2}}
-{"schema_version":1,"device_id":"esp32-dev-001","sequence":3,"uptime_ms":15042,"simulated":true,"measurements":{"temperature_c":21.8,"humidity_pct":49.5}}
+{"schema_version":1,"device_id":"esp32-dev-001","sequence":1,"uptime_ms":5042,"simulated":true,"measurements":{"temperature_c":21.8,"humidity_pct":49.2,"pressure_hpa":1013.25,"co2_ppm":401,"light_lux":492.3,"voc_index":102,"battery_mv":4199,"rssi_dbm":-64}}
+{"schema_version":1,"device_id":"esp32-dev-001","sequence":2,"uptime_ms":10042,"simulated":true,"measurements":{"temperature_c":22.0,"humidity_pct":50.2,"pressure_hpa":1013.18,"co2_ppm":407,"light_lux":498.1,"voc_index":105,"battery_mv":4199,"rssi_dbm":-66}}
+{"schema_version":1,"device_id":"esp32-dev-001","sequence":3,"uptime_ms":15042,"simulated":true,"measurements":{"temperature_c":21.8,"humidity_pct":49.5,"pressure_hpa":1013.31,"co2_ppm":399,"light_lux":503.7,"voc_index":101,"battery_mv":4198,"rssi_dbm":-65}}
 ```
 
 ---
