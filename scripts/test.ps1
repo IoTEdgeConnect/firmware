@@ -17,12 +17,17 @@ $testSrc  = "$root\tests\test_telemetry.cpp"
 $testBin  = "$root\tests\test_telemetry.exe"
 
 function Find-Compiler {
-    # Prefer g++ (MSYS2/MinGW/Git-bundled), fall back to cl.exe
+    # Check PATH first
     if (Get-Command g++ -ErrorAction SilentlyContinue) {
-        return [PSCustomObject]@{ Exe = 'g++'; Type = 'gcc' }
+        return [PSCustomObject]@{ Exe = (Get-Command g++).Source; Type = 'gcc' }
     }
     if (Get-Command cl -ErrorAction SilentlyContinue) {
-        return [PSCustomObject]@{ Exe = 'cl'; Type = 'msvc' }
+        return [PSCustomObject]@{ Exe = (Get-Command cl).Source; Type = 'msvc' }
+    }
+    # Fall back to known MSYS2 install location even if not on PATH yet
+    $msys2Gpp = 'C:\msys64\mingw64\bin\g++.exe'
+    if (Test-Path $msys2Gpp) {
+        return [PSCustomObject]@{ Exe = $msys2Gpp; Type = 'gcc' }
     }
     return $null
 }
@@ -75,7 +80,7 @@ if ($compiler.Type -eq 'gcc') {
         $testSrc,
         "-o$testBin"
     )
-    & g++ @buildArgs
+    & $compiler.Exe @buildArgs
 } else {
     # MSVC
     $buildArgs = @(
