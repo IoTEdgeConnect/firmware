@@ -5,14 +5,6 @@
 ::
 :: First time setup:
 ::   scripts\run.cmd setup
-::
-:: Usage:
-::   scripts\run.cmd build
-::   scripts\run.cmd flash            [-Port COMx]
-::   scripts\run.cmd monitor          [-Port COMx]
-::   scripts\run.cmd flash_monitor    [-Port COMx]
-::   scripts\run.cmd wsl_attach       [-BusId <id>]
-::   scripts\run.cmd wsl_detach       [-BusId <id>]
 
 setlocal EnableDelayedExpansion
 
@@ -26,7 +18,8 @@ if "%~1"=="" (
     echo.
     echo  Scripts:
     echo    setup                          Install all dependencies
-    echo    build                          Build firmware
+    echo    test                           Run host-side unit tests
+    echo    build                          Build firmware ^(runs tests first^)
     echo    flash            [-Port COMx]  Flash to ESP32
     echo    monitor          [-Port COMx]  Open serial monitor
     echo    flash_monitor    [-Port COMx]  Flash then monitor
@@ -36,39 +29,69 @@ if "%~1"=="" (
     exit /b 0
 )
 
-set SCRIPT=%~dp0%~1.ps1
-
-if not exist "%SCRIPT%" (
-    echo ERROR: Unknown command "%~1". Run scripts\run.cmd with no arguments for help.
-    exit /b 1
-)
-
 :: Strip script name from args
 set ARGS=
 for /f "tokens=1,*" %%a in ("%*") do set ARGS=%%b
 
 :: -----------------------------------------------------------------------
-:: wsl_attach needs admin - relaunch elevated if not already
+:: setup - no IDF needed, no pre-checks
+:: -----------------------------------------------------------------------
+if /i "%~1"=="setup" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1" %ARGS%
+    exit /b %ERRORLEVEL%
+)
+
+:: -----------------------------------------------------------------------
+:: test - no IDF needed
+:: -----------------------------------------------------------------------
+if /i "%~1"=="test" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0test.ps1" %ARGS%
+    exit /b %ERRORLEVEL%
+)
+
+:: -----------------------------------------------------------------------
+:: wsl_attach - needs admin
 :: -----------------------------------------------------------------------
 if /i "%~1"=="wsl_attach" (
     net session >nul 2>&1
     if errorlevel 1 (
         echo Relaunching as Administrator for wsl_attach...
-        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d \"%CD%\" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%SCRIPT%\" %ARGS%' -Verb RunAs"
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/k cd /d \"%CD%\" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0wsl_attach.ps1\" %ARGS%' -Verb RunAs"
         exit /b
     )
-    goto :run
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0wsl_attach.ps1" %ARGS%
+    exit /b %ERRORLEVEL%
 )
 
 :: -----------------------------------------------------------------------
-:: setup does not need IDF activated
+:: wsl_detach
 :: -----------------------------------------------------------------------
-if /i "%~1"=="setup" goto :run
+if /i "%~1"=="wsl_detach" (
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0wsl_detach.ps1" %ARGS%
+    exit /b %ERRORLEVEL%
+)
 
 :: -----------------------------------------------------------------------
-:: Activate ESP-IDF if not already active.
-:: Delegate path detection to _idf_env.ps1 to avoid cmd quoting issues.
+:: build / flash / monitor / flash_monitor - all need IDF activated
 :: -----------------------------------------------------------------------
+set SCRIPT=%~dp0%~1.ps1
+if not exist "%SCRIPT%" (
+    echo ERROR: Unknown command "%~1". Run scripts\run.cmd with no arguments for help.
+    exit /b 1
+)
+
+:: build runs tests first
+if /i "%~1"=="build" (
+    echo Running tests before build...
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0test.ps1"
+    if errorlevel 1 (
+        echo.
+        echo Tests failed - aborting build.
+        exit /b 1
+    )
+)
+
+:: Activate ESP-IDF if not already active
 if "%IDF_PATH%"=="" (
     set _ENV_FILE=%TEMP%\idf_env_vars.tmp
     powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0_idf_env.ps1" "!_ENV_FILE!"
@@ -85,5 +108,4 @@ if "%IDF_PATH%"=="" (
     call "!_IDF_DIR!\export.bat"
 )
 
-:run
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %ARGS%

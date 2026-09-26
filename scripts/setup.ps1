@@ -5,9 +5,10 @@
 # Steps:
 #   1. Git
 #   2. Python
-#   3. ESP-IDF source (offline installer)
-#   4. ESP-IDF toolchains (install.bat esp32)
-#   5. usbipd-win
+#   3. C++ compiler (MSYS2 + MinGW g++)
+#   4. ESP-IDF source (offline installer)
+#   5. ESP-IDF toolchains (install.bat esp32)
+#   6. usbipd-win
 #
 # Run with:
 #   scripts\run.cmd setup
@@ -98,7 +99,47 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. ESP-IDF source
+# 3. C++ compiler (MSYS2 + MinGW g++)
+# ---------------------------------------------------------------------------
+Write-Step "Checking C++ compiler..."
+
+$gpp = Get-Command g++ -ErrorAction SilentlyContinue
+if ($gpp) {
+    Write-Ok "g++ found at $($gpp.Source)"
+} else {
+    # Check if MSYS2 is installed but g++ just isn't on PATH yet
+    $msys2Root = 'C:\msys64'
+    $mingwGpp  = "$msys2Root\mingw64\bin\g++.exe"
+
+    if (-not (Test-Path $mingwGpp)) {
+        Write-Warn "g++ not found - installing MSYS2 via winget..."
+        winget install --id MSYS2.MSYS2 -e --source winget --accept-package-agreements --accept-source-agreements
+
+        Write-Host "    Installing mingw-w64-x86_64-gcc via pacman..." -ForegroundColor DarkGray
+        $pacman = "$msys2Root\usr\bin\pacman.exe"
+        if (-not (Test-Path $pacman)) {
+            Write-Error "MSYS2 installed but pacman not found at $pacman. Restart setup."
+            exit 1
+        }
+        & $pacman -S --noconfirm mingw-w64-x86_64-gcc
+    } else {
+        Write-Host "    MSYS2 found but g++ not on PATH - adding MinGW to PATH..." -ForegroundColor DarkGray
+    }
+
+    # Add MinGW bin to the user PATH permanently
+    $mingwBin = "$msys2Root\mingw64\bin"
+    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    if ($userPath -notlike "*$mingwBin*") {
+        [Environment]::SetEnvironmentVariable('PATH', "$mingwBin;$userPath", 'User')
+        $env:PATH = "$mingwBin;$env:PATH"
+        Write-Host "    Added $mingwBin to user PATH" -ForegroundColor DarkGray
+    }
+    Write-Ok "g++ installed at $mingwBin\g++.exe"
+    Write-Host "    NOTE: Open a new terminal for PATH changes to take effect." -ForegroundColor Yellow
+}
+
+# ---------------------------------------------------------------------------
+# 4. ESP-IDF source
 # ---------------------------------------------------------------------------
 Write-Step "Checking ESP-IDF source..."
 
@@ -174,7 +215,7 @@ if ($idfDir) {
 }
 
 # ---------------------------------------------------------------------------
-# 4. ESP-IDF toolchains
+# 5. ESP-IDF toolchains
 # ---------------------------------------------------------------------------
 Write-Step "Checking ESP-IDF toolchains..."
 
@@ -203,7 +244,7 @@ if ($xtensa) {
 }
 
 # ---------------------------------------------------------------------------
-# 5. usbipd-win
+# 6. usbipd-win
 # ---------------------------------------------------------------------------
 Write-Step "Checking usbipd-win..."
 if (Get-Command usbipd -ErrorAction SilentlyContinue) {

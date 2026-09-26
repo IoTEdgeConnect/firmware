@@ -17,6 +17,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Run host-side unit tests
+        shell: bash
+        run: |
+          g++ -std=c++17 \
+              -I main \
+              -I $IDF_PATH/components/json/cJSON \
+              main/telemetry/telemetry_generator.cpp \
+              main/telemetry/telemetry.cpp \
+              $IDF_PATH/components/json/cJSON/cJSON.c \
+              tests/test_telemetry.cpp \
+              -o tests/test_telemetry
+          ./tests/test_telemetry
+        working-directory: ${{ github.workspace }}
+
       - name: Build firmware
         shell: bash
         run: |
