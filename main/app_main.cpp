@@ -55,12 +55,8 @@ extern "C" void app_main()
     network_init();
     time_sync_init();
 
-    ESP_ERROR_CHECK(xTaskCreate(
-        telemetry_task,
-        "telemetry",
-        4096,
-        nullptr,
-        5,
-        nullptr
-    ) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    if (xTaskCreate(telemetry_task, "telemetry", 4096, nullptr, 5, nullptr) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create telemetry task — out of memory (stack: 4096 words)");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
 }

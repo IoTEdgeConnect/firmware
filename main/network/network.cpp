@@ -185,10 +185,16 @@ void network_init()
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     s_netif = esp_netif_create_default_wifi_sta();
-    ESP_ERROR_CHECK(s_netif ? ESP_OK : ESP_ERR_NO_MEM);
+    if (!s_netif) {
+        ESP_LOGE(TAG, "Failed to create default Wi-Fi STA netif — out of memory");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
 
     s_wifi_events = xEventGroupCreate();
-    ESP_ERROR_CHECK(s_wifi_events ? ESP_OK : ESP_ERR_NO_MEM);
+    if (!s_wifi_events) {
+        ESP_LOGE(TAG, "Failed to create Wi-Fi event group — out of memory");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -211,8 +217,14 @@ void network_init()
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_ERROR_CHECK(xTaskCreate(reconnect_task,      "wifi_reconnect",  2048, nullptr, 4, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
-    ESP_ERROR_CHECK(xTaskCreate(internet_check_task, "internet_check",  3072, nullptr, 3, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    if (xTaskCreate(reconnect_task, "wifi_reconnect", 2048, nullptr, 4, nullptr) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create wifi_reconnect task — out of memory (stack: 2048 words)");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
+    if (xTaskCreate(internet_check_task, "internet_check", 3072, nullptr, 3, nullptr) != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create internet_check task — out of memory (stack: 3072 words)");
+        ESP_ERROR_CHECK(ESP_ERR_NO_MEM);
+    }
 }
 
 NetworkStatus network_get_status()
