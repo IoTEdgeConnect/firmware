@@ -25,4 +25,7 @@ managed_components/
 secrets.*
 credentials.*
 
+# Wi-Fi credentials — copy wifi_config.example.h to wifi_config.h locally
+main/config/wifi_config.h
+
 .amazonq
