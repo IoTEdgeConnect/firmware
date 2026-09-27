@@ -29,7 +29,7 @@ static constexpr EventBits_t BIT_DNS_DONE     = BIT2;
 static volatile bool s_internet = false;
 static char s_ip_addr[16] = {};
 static esp_netif_t* s_netif = nullptr;
-static portMUX_TYPE s_ip_mux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_state_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // ---------------------------------------------------------------------------
 // DNS callback — called from the lwIP thread
@@ -40,7 +40,9 @@ static void dns_found_cb(const char* /*name*/, const ip_addr_t* addr, void* arg)
     auto* events = static_cast<EventGroupHandle_t>(arg);
     // addr is non-null on success, null on failure/timeout
     if (addr) {
+        taskENTER_CRITICAL(&s_state_mux);
         s_internet = true;
+        taskEXIT_CRITICAL(&s_state_mux);
     }
     xEventGroupSetBitsFromISR(events, BIT_DNS_DONE, nullptr);
 }
@@ -53,7 +55,9 @@ static bool dns_resolves(const char* server, EventGroupHandle_t events)
 {
     ip_addr_t addr{};
     xEventGroupClearBits(events, BIT_DNS_DONE);
+    taskENTER_CRITICAL(&s_state_mux);
     s_internet = false;
+    taskEXIT_CRITICAL(&s_state_mux);
 
     err_t err = dns_gethostbyname(server, &addr, dns_found_cb, events);
     if (err == ERR_OK) {
@@ -65,7 +69,10 @@ static bool dns_resolves(const char* server, EventGroupHandle_t events)
 
     EventBits_t bits = xEventGroupWaitBits(events, BIT_DNS_DONE,
                                            pdTRUE, pdFALSE, DNS_TIMEOUT_TICKS);
-    return (bits & BIT_DNS_DONE) && s_internet;
+    taskENTER_CRITICAL(&s_state_mux);
+    bool result = (bits & BIT_DNS_DONE) && s_internet;
+    taskEXIT_CRITICAL(&s_state_mux);
+    return result;
 }
 
 static void internet_check_task(void* /*arg*/)
@@ -84,7 +91,9 @@ static void internet_check_task(void* /*arg*/)
             }
         }
 
+        taskENTER_CRITICAL(&s_state_mux);
         s_internet = reachable;
+        taskEXIT_CRITICAL(&s_state_mux);
         ESP_LOGI(TAG, "Internet: %s", reachable ? "reachable" : "unreachable");
 
         vTaskDelay(INTERNET_CHECK_INTERVAL);
@@ -100,7 +109,9 @@ static void reconnect_task(void* /*arg*/)
     while (true) {
         xEventGroupWaitBits(s_wifi_events, BIT_DISCONNECTED,
                             pdTRUE /*clear*/, pdFALSE, portMAX_DELAY);
+        taskENTER_CRITICAL(&s_state_mux);
         s_internet = false;
+        taskEXIT_CRITICAL(&s_state_mux);
         vTaskDelay(RECONNECT_DELAY_TICKS);
         // Force a fresh DHCP lease on reconnect — prevents the driver
         // reusing a stale cached lease from NVS.
@@ -133,9 +144,9 @@ static void wifi_event_handler(void* /*arg*/, esp_event_base_t base,
                 xEventGroupClearBits(s_wifi_events, BIT_CONNECTED);
                 auto* ev = static_cast<wifi_event_sta_disconnected_t*>(data);
                 ESP_LOGW(TAG, "Wi-Fi disconnected (reason %d)", ev->reason);
-                taskENTER_CRITICAL(&s_ip_mux);
+                taskENTER_CRITICAL(&s_state_mux);
                 s_ip_addr[0] = '\0';
-                taskEXIT_CRITICAL(&s_ip_mux);
+                taskEXIT_CRITICAL(&s_state_mux);
                 xEventGroupSetBits(s_wifi_events, BIT_DISCONNECTED);
                 break;
             }
@@ -145,9 +156,9 @@ static void wifi_event_handler(void* /*arg*/, esp_event_base_t base,
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         auto* ev = static_cast<ip_event_got_ip_t*>(data);
-        taskENTER_CRITICAL(&s_ip_mux);
+        taskENTER_CRITICAL(&s_state_mux);
         snprintf(s_ip_addr, sizeof(s_ip_addr), IPSTR, IP2STR(&ev->ip_info.ip));
-        taskEXIT_CRITICAL(&s_ip_mux);
+        taskEXIT_CRITICAL(&s_state_mux);
         ESP_LOGI(TAG, "IPv4 address: %s", s_ip_addr);
         ESP_LOGI(TAG, "Gateway:      " IPSTR, IP2STR(&ev->ip_info.gw));
         ESP_LOGI(TAG, "Netmask:      " IPSTR, IP2STR(&ev->ip_info.netmask));
@@ -208,10 +219,10 @@ NetworkStatus network_get_status()
 {
     NetworkStatus status{};
 
-    taskENTER_CRITICAL(&s_ip_mux);
+    taskENTER_CRITICAL(&s_state_mux);
     strncpy(status.ip_addr, s_ip_addr, sizeof(status.ip_addr) - 1);
     status.ip_addr[sizeof(status.ip_addr) - 1] = '\0';
-    taskEXIT_CRITICAL(&s_ip_mux);
+    taskEXIT_CRITICAL(&s_state_mux);
 
     EventBits_t bits = xEventGroupGetBits(s_wifi_events);
     if (!(bits & BIT_CONNECTED)) {
@@ -224,7 +235,9 @@ NetworkStatus network_get_status()
     }
 
     status.connected = true;
+    taskENTER_CRITICAL(&s_state_mux);
     status.internet  = s_internet;
+    taskEXIT_CRITICAL(&s_state_mux);
     status.rssi_dbm  = ap.rssi;
     return status;
 }
