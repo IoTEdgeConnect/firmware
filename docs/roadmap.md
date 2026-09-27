@@ -59,47 +59,20 @@ timeline
 
 ---
 
-## Phase 2 — Network & Time (Next)
+## Phase 2 — Network & Time (Complete)
 
 **Goal:** Connect the device to Wi-Fi and synchronise wall-clock time via NTP.
 
-**Planned additions:**
+**Delivered:**
 
-- Wi-Fi manager (connect, reconnect, status logging)
-- NTP client (synchronise on boot, periodic re-sync)
-- `timestamp_utc` field added to `Telemetry` struct
-- `telemetry_to_json` updated to include ISO 8601 timestamp
-- Wi-Fi credentials managed via `sdkconfig` (not committed)
+- `network.cpp` — Wi-Fi STA mode, NVS initialisation, event-driven reconnection, RSSI query
+- `time_sync.cpp` — SNTP client, UTC-only, ISO 8601 timestamp formatting
+- `Telemetry` struct extended: `timestamp_utc`, `net_connected`, `net_rssi_dbm`
+- `telemetry_to_json` updated: `timestamp` omitted before sync, `network` object, `rssi_dbm` conditional
+- Wi-Fi credentials via gitignored `wifi_config.h` (template committed as `wifi_config.example.h`)
+- CI generates placeholder `wifi_config.h` from the example; no real credentials in CI
 
-**Architecture impact:**
-
-The `Telemetry` struct gains one field. `telemetry_to_json` is updated.
-No other existing code changes. The telemetry task, generator, and serial
-output are unaffected.
-
-```mermaid
-flowchart LR
-    subgraph existing [Unchanged from Phase 1]
-        GEN[TelemetryGenerator]
-        STRUCT[Telemetry struct]
-        SER[telemetry_to_json]
-        UART[Serial console]
-    end
-
-    subgraph new [New in Phase 2]
-        WIFI[Wi-Fi manager]
-        NTP[NTP client]
-        TS[timestamp_utc field]
-    end
-
-    WIFI --> NTP
-    NTP --> TS
-    TS -->|added to| STRUCT
-    STRUCT --> SER
-    SER --> UART
-```
-
-**What Phase 2 will not include:**
+**What Phase 2 does not include:**
 
 - MQTT or cloud connectivity
 - Real sensors
