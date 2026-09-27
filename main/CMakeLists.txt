@@ -1,11 +1,18 @@
 idf_component_register(
     SRCS
         "app_main.cpp"
+        "network/network.cpp"
+        "time_sync/time_sync.cpp"
         "telemetry/telemetry.cpp"
         "telemetry/telemetry_generator.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
         esp_timer
+        esp_wifi
+        esp_netif
+        esp_event
+        nvs_flash
+        lwip
         json
 )

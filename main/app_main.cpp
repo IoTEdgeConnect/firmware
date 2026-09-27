@@ -1,10 +1,13 @@
 #include "config/device_config.h"
+#include "network/network.h"
+#include "time_sync/time_sync.h"
 #include "telemetry/telemetry.h"
 #include "telemetry/telemetry_generator.h"
 
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -22,6 +25,18 @@ static void telemetry_task(void* /*arg*/)
         vTaskDelayUntil(&last_wake, interval);
 
         Telemetry sample = generator.next();
+
+        // Populate network status
+        NetworkStatus net = network_get_status();
+        sample.net_connected = net.connected;
+        sample.net_internet  = net.internet;
+        sample.net_rssi_dbm  = net.rssi_dbm;
+        strncpy(sample.net_ip_addr, net.ip_addr, sizeof(sample.net_ip_addr) - 1);
+        sample.net_ip_addr[sizeof(sample.net_ip_addr) - 1] = '\0';
+
+        // Populate wall-clock timestamp if synchronised
+        time_sync_get_iso8601(sample.timestamp_utc, sizeof(sample.timestamp_utc));
+
         char* json = telemetry_to_json(sample);
         if (json) {
             printf("%s\n", json);
@@ -36,6 +51,9 @@ extern "C" void app_main()
     ESP_LOGI(TAG, "Device: %s",            config::DEVICE_ID);
     ESP_LOGI(TAG, "Firmware: %s",          config::FIRMWARE_VERSION);
     ESP_LOGI(TAG, "Telemetry interval: %" PRIu32 " ms", config::TELEMETRY_INTERVAL_MS);
+
+    network_init();
+    time_sync_init();
 
     xTaskCreate(
         telemetry_task,
