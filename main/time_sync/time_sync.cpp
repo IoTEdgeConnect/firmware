@@ -11,6 +11,7 @@ static constexpr const char* NTP_HOST = "pool.ntp.org";
 
 static void sntp_sync_cb(struct timeval* /*tv*/)
 {
+    // "YYYY-MM-DDTHH:MM:SSZ" = 20 chars + NUL terminator = 21 bytes exactly.
     char buf[21];
     time_t now = time(nullptr);
     struct tm t{};
