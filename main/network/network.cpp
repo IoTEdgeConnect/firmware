@@ -115,8 +115,18 @@ static void reconnect_task(void* /*arg*/)
         vTaskDelay(RECONNECT_DELAY_TICKS);
         // Force a fresh DHCP lease on reconnect — prevents the driver
         // reusing a stale cached lease from NVS.
-        esp_netif_dhcpc_stop(s_netif);
-        esp_netif_dhcpc_start(s_netif);
+        {
+            esp_err_t e = esp_netif_dhcpc_stop(s_netif);
+            if (e != ESP_OK && e != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+                ESP_LOGW(TAG, "esp_netif_dhcpc_stop() failed (err 0x%x: %s) — continuing anyway",
+                         e, esp_err_to_name(e));
+            }
+            e = esp_netif_dhcpc_start(s_netif);
+            if (e != ESP_OK) {
+                ESP_LOGW(TAG, "esp_netif_dhcpc_start() failed (err 0x%x: %s) — DHCP may not renew",
+                         e, esp_err_to_name(e));
+            }
+        }
         ESP_LOGI(TAG, "Reconnecting to %s", wifi_config::SSID);
         {
             esp_err_t e = esp_wifi_connect();
