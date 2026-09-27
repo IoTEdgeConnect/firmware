@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cstdint>
+#include <cstddef>
 
 // Start SNTP synchronisation. Call once after network connectivity is
 // established. Returns immediately; synchronisation happens asynchronously.
