@@ -34,7 +34,7 @@ bool time_sync_is_valid()
     return sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED;
 }
 
-bool time_sync_get_iso8601(char* buf, uint32_t buf_len)
+bool time_sync_get_iso8601(char* buf, size_t buf_len)
 {
     if (!time_sync_is_valid()) {
         return false;
