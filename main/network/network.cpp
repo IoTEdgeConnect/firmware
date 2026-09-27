@@ -200,8 +200,8 @@ void network_init()
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    xTaskCreate(reconnect_task,      "wifi_reconnect",  2048, nullptr, 4, nullptr);
-    xTaskCreate(internet_check_task, "internet_check",  3072, nullptr, 3, nullptr);
+    ESP_ERROR_CHECK(xTaskCreate(reconnect_task,      "wifi_reconnect",  2048, nullptr, 4, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreate(internet_check_task, "internet_check",  3072, nullptr, 3, nullptr) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 }
 
 NetworkStatus network_get_status()
