@@ -81,18 +81,17 @@ int main()
             CHECK(s.light_lux     >= 0.0f   && s.light_lux     <= 10000.0f,"light within [0, 10000]");
             CHECK(s.voc_index     >= 1.0f   && s.voc_index     <= 500.0f,  "voc within [1, 500]");
             CHECK(s.battery_mv    >= 3000.0f&& s.battery_mv    <= 4200.0f, "battery within [3000, 4200]");
-            CHECK(s.rssi_dbm      >= -90    && s.rssi_dbm      <= -30,     "rssi within [-90, -30]");
         }
     }
 
-    // --- all fields change over time ----------------------------------------
+    // --- all measurement fields change over time ----------------------------
     {
         TelemetryGenerator gen;
         Telemetry first = gen.next();
         bool temp_changed  = false, hum_changed   = false;
         bool pres_changed  = false, co2_changed   = false;
         bool light_changed = false, voc_changed   = false;
-        bool bat_changed   = false, rssi_changed  = false;
+        bool bat_changed   = false;
 
         for (int i = 0; i < 20; ++i) {
             Telemetry s = gen.next();
@@ -103,7 +102,6 @@ int main()
             if (s.light_lux     != first.light_lux)     light_changed = true;
             if (s.voc_index     != first.voc_index)     voc_changed   = true;
             if (s.battery_mv    != first.battery_mv)    bat_changed   = true;
-            if (s.rssi_dbm      != first.rssi_dbm)      rssi_changed  = true;
         }
 
         CHECK(temp_changed,  "temperature changes over time");
@@ -113,7 +111,6 @@ int main()
         CHECK(light_changed, "light changes over time");
         CHECK(voc_changed,   "voc changes over time");
         CHECK(bat_changed,   "battery changes over time");
-        CHECK(rssi_changed,  "rssi changes over time");
     }
 
     // --- battery drains monotonically over many samples --------------------
@@ -125,40 +122,70 @@ int main()
         CHECK(later.battery_mv < first.battery_mv, "battery drains over time");
     }
 
-    // --- JSON serialisation -------------------------------------------------
+    // --- JSON serialisation: no timestamp when empty -----------------------
     {
         Telemetry s{};
-        s.sequence      = 42;
-        s.uptime_ms     = 210000;
-        s.temperature_c = 22.4f;
-        s.humidity_pct  = 53.1f;
-        s.pressure_hpa  = 1013.25f;
-        s.co2_ppm       = 412.0f;
-        s.light_lux     = 487.5f;
-        s.voc_index     = 103.0f;
-        s.battery_mv    = 4150.0f;
-        s.rssi_dbm      = -67;
+        s.sequence         = 42;
+        s.uptime_ms        = 210000;
+        s.timestamp_utc[0] = '\0';
+        s.net_connected    = false;
+        s.net_internet     = false;
+        s.net_rssi_dbm     = 0;
+        s.temperature_c    = 22.4f;
+        s.humidity_pct     = 53.1f;
+        s.pressure_hpa     = 1013.25f;
+        s.co2_ppm          = 412.0f;
+        s.light_lux        = 487.5f;
+        s.voc_index        = 103.0f;
+        s.battery_mv       = 4150.0f;
 
         char* json = telemetry_to_json(s);
-        CHECK(json != nullptr, "telemetry_to_json returns non-null");
+        CHECK(json != nullptr,                                        "telemetry_to_json returns non-null");
+        CHECK(strstr(json, "\"schema_version\":1")  != nullptr,       "schema_version present");
+        CHECK(strstr(json, "\"device_id\"")         != nullptr,       "device_id present");
+        CHECK(strstr(json, "\"sequence\":42")        != nullptr,       "sequence present");
+        CHECK(strstr(json, "\"uptime_ms\":210000")   != nullptr,       "uptime_ms present");
+        CHECK(strstr(json, "\"simulated\":true")     != nullptr,       "simulated flag present");
+        CHECK(strstr(json, "\"timestamp\"")          == nullptr,       "timestamp absent when not synced");
+        CHECK(strstr(json, "\"network\"")            != nullptr,       "network object present");
+        CHECK(strstr(json, "\"connected\":false")    != nullptr,       "connected:false when disconnected");
+        CHECK(strstr(json, "\"internet\":false")      != nullptr,       "internet:false when disconnected");
+        CHECK(strstr(json, "\"rssi_dbm\"")           == nullptr,       "rssi_dbm absent when disconnected");
+        CHECK(strstr(json, "\"measurements\"")       != nullptr,       "measurements object present");
+        CHECK(strstr(json, "\"temperature_c\"")      != nullptr,       "temperature_c present");
+        CHECK(strstr(json, "\"humidity_pct\"")       != nullptr,       "humidity_pct present");
+        CHECK(strstr(json, "\"pressure_hpa\"")       != nullptr,       "pressure_hpa present");
+        CHECK(strstr(json, "\"co2_ppm\"")            != nullptr,       "co2_ppm present");
+        CHECK(strstr(json, "\"light_lux\"")          != nullptr,       "light_lux present");
+        CHECK(strstr(json, "\"voc_index\"")          != nullptr,       "voc_index present");
+        CHECK(strstr(json, "\"battery_mv\"")         != nullptr,       "battery_mv present");
+        free(json);
+    }
 
-        if (json) {
-            CHECK(strstr(json, "\"schema_version\":1")  != nullptr, "schema_version present");
-            CHECK(strstr(json, "\"device_id\"")         != nullptr, "device_id present");
-            CHECK(strstr(json, "\"sequence\":42")       != nullptr, "sequence present");
-            CHECK(strstr(json, "\"uptime_ms\":210000")  != nullptr, "uptime_ms present");
-            CHECK(strstr(json, "\"simulated\":true")    != nullptr, "simulated flag present");
-            CHECK(strstr(json, "\"measurements\"")      != nullptr, "measurements object present");
-            CHECK(strstr(json, "\"temperature_c\"")     != nullptr, "temperature_c present");
-            CHECK(strstr(json, "\"humidity_pct\"")      != nullptr, "humidity_pct present");
-            CHECK(strstr(json, "\"pressure_hpa\"")      != nullptr, "pressure_hpa present");
-            CHECK(strstr(json, "\"co2_ppm\"")           != nullptr, "co2_ppm present");
-            CHECK(strstr(json, "\"light_lux\"")         != nullptr, "light_lux present");
-            CHECK(strstr(json, "\"voc_index\"")         != nullptr, "voc_index present");
-            CHECK(strstr(json, "\"battery_mv\"")        != nullptr, "battery_mv present");
-            CHECK(strstr(json, "\"rssi_dbm\"")          != nullptr, "rssi_dbm present");
-            free(json);
-        }
+    // --- JSON serialisation: timestamp and RSSI when connected -------------
+    {
+        Telemetry s{};
+        s.sequence      = 1;
+        s.uptime_ms     = 5000;
+        strncpy(s.timestamp_utc, "2026-09-26T19:45:32Z", sizeof(s.timestamp_utc));
+        s.net_connected = true;
+        s.net_internet  = true;
+        s.net_rssi_dbm  = -57;
+        s.temperature_c = 22.0f;
+        s.humidity_pct  = 50.0f;
+        s.pressure_hpa  = 1013.25f;
+        s.co2_ppm       = 400.0f;
+        s.light_lux     = 500.0f;
+        s.voc_index     = 100.0f;
+        s.battery_mv    = 4200.0f;
+
+        char* json = telemetry_to_json(s);
+        CHECK(json != nullptr,                                              "connected: non-null json");
+        CHECK(strstr(json, "\"timestamp\":\"2026-09-26T19:45:32Z\"") != nullptr, "timestamp present when synced");
+        CHECK(strstr(json, "\"connected\":true")  != nullptr,               "connected:true");
+        CHECK(strstr(json, "\"internet\":true")    != nullptr,               "internet:true when reachable");
+        CHECK(strstr(json, "\"rssi_dbm\":-57")    != nullptr,               "rssi_dbm present when connected");
+        free(json);
     }
 
     printf("\nResults: %d passed, %d failed\n", passed, failed);
