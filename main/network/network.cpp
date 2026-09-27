@@ -29,6 +29,7 @@ static constexpr EventBits_t BIT_DNS_DONE     = BIT2;
 static volatile bool s_internet = false;
 static char s_ip_addr[16] = {};
 static esp_netif_t* s_netif = nullptr;
+static portMUX_TYPE s_ip_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // ---------------------------------------------------------------------------
 // DNS callback — called from the lwIP thread
@@ -132,7 +133,9 @@ static void wifi_event_handler(void* /*arg*/, esp_event_base_t base,
                 xEventGroupClearBits(s_wifi_events, BIT_CONNECTED);
                 auto* ev = static_cast<wifi_event_sta_disconnected_t*>(data);
                 ESP_LOGW(TAG, "Wi-Fi disconnected (reason %d)", ev->reason);
+                taskENTER_CRITICAL(&s_ip_mux);
                 s_ip_addr[0] = '\0';
+                taskEXIT_CRITICAL(&s_ip_mux);
                 xEventGroupSetBits(s_wifi_events, BIT_DISCONNECTED);
                 break;
             }
@@ -142,7 +145,9 @@ static void wifi_event_handler(void* /*arg*/, esp_event_base_t base,
         }
     } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
         auto* ev = static_cast<ip_event_got_ip_t*>(data);
+        taskENTER_CRITICAL(&s_ip_mux);
         snprintf(s_ip_addr, sizeof(s_ip_addr), IPSTR, IP2STR(&ev->ip_info.ip));
+        taskEXIT_CRITICAL(&s_ip_mux);
         ESP_LOGI(TAG, "IPv4 address: %s", s_ip_addr);
         ESP_LOGI(TAG, "Gateway:      " IPSTR, IP2STR(&ev->ip_info.gw));
         ESP_LOGI(TAG, "Netmask:      " IPSTR, IP2STR(&ev->ip_info.netmask));
@@ -199,15 +204,25 @@ void network_init()
 
 NetworkStatus network_get_status()
 {
+    NetworkStatus status{};
+
+    taskENTER_CRITICAL(&s_ip_mux);
+    strncpy(status.ip_addr, s_ip_addr, sizeof(status.ip_addr) - 1);
+    status.ip_addr[sizeof(status.ip_addr) - 1] = '\0';
+    taskEXIT_CRITICAL(&s_ip_mux);
+
     EventBits_t bits = xEventGroupGetBits(s_wifi_events);
     if (!(bits & BIT_CONNECTED)) {
-        return {false, false, 0, s_ip_addr};
+        return status;  // connected/internet/rssi remain zero-initialised
     }
 
     wifi_ap_record_t ap{};
     if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
-        return {false, false, 0, s_ip_addr};
+        return status;
     }
 
-    return {true, s_internet, ap.rssi, s_ip_addr};
+    status.connected = true;
+    status.internet  = s_internet;
+    status.rssi_dbm  = ap.rssi;
+    return status;
 }
