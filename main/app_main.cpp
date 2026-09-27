@@ -41,6 +41,9 @@ static void telemetry_task(void* /*arg*/)
         if (json) {
             printf("%s\n", json);
             free(json);
+        } else {
+            ESP_LOGE(TAG, "Telemetry sample %" PRIu64 " dropped — JSON serialisation failed (sequence: %" PRIu64 ", uptime: %" PRId64 " ms)",
+                     sample.sequence, sample.sequence, sample.uptime_ms);
         }
     }
 }
