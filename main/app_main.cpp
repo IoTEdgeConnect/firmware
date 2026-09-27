@@ -31,8 +31,8 @@ static void telemetry_task(void* /*arg*/)
         sample.net_connected = net.connected;
         sample.net_internet  = net.internet;
         sample.net_rssi_dbm  = net.rssi_dbm;
-        strncpy(sample.net_ip_addr, net.ip_addr, sizeof(sample.net_ip_addr) - 1);
-        sample.net_ip_addr[sizeof(sample.net_ip_addr) - 1] = '\0';
+        static_assert(sizeof(sample.net_ip_addr) == sizeof(net.ip_addr), "IP buffer size mismatch");
+        memcpy(sample.net_ip_addr, net.ip_addr, sizeof(sample.net_ip_addr));
 
         // Populate wall-clock timestamp if synchronised
         time_sync_get_iso8601(sample.timestamp_utc, sizeof(sample.timestamp_utc));
