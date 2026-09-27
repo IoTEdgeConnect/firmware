@@ -13,6 +13,8 @@ static constexpr const char* TAG = "TELEMETRY";
 
 // Format a float to a fixed number of decimal places into buf.
 // Uses integer arithmetic to avoid double-precision drift.
+// Assumes value * 10^dp fits within a 32-bit long (safe for all current
+// sensor ranges: max is light_lux 10000 * 10^1 = 100000 < INT32_MAX).
 static void fmt_dp(char* buf, size_t len, float value, int dp)
 {
     int factor = 1;
