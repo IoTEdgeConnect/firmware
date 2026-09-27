@@ -6,6 +6,16 @@ struct Telemetry {
     uint64_t sequence;
     int64_t  uptime_ms;
 
+    // Wall-clock time — ISO 8601 UTC ("YYYY-MM-DDTHH:MM:SSZ").
+    // Empty string when SNTP has not yet synchronised.
+    char     timestamp_utc[21];
+
+    // Network status
+    bool     net_connected;
+    bool     net_internet;  // true if DNS reachability check passed
+    int8_t   net_rssi_dbm;  // valid only when net_connected == true
+    char     net_ip_addr[16]; // "xxx.xxx.xxx.xxx" + NUL; empty when disconnected
+
     // Environmental
     float    temperature_c;
     float    humidity_pct;
@@ -16,7 +26,6 @@ struct Telemetry {
 
     // Device health
     float    battery_mv;
-    int32_t  rssi_dbm;
 };
 
 // Serialise a Telemetry sample to a compact JSON string.

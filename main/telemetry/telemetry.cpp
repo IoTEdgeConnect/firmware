@@ -2,6 +2,7 @@
 #include "config/device_config.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -10,10 +11,33 @@
 
 static constexpr const char* TAG = "TELEMETRY";
 
-// Round a float to a given number of decimal places
-static inline double round_dp(float value, float factor)
+// Format a float to a fixed number of decimal places into buf.
+// Uses integer arithmetic to avoid double-precision drift.
+static void fmt_dp(char* buf, size_t len, float value, int dp)
 {
-    return static_cast<double>(roundf(value * factor) / factor);
+    int factor = 1;
+    for (int i = 0; i < dp; ++i) factor *= 10;
+    long rounded = static_cast<long>(roundf(value * static_cast<float>(factor)));
+    if (dp == 0) {
+        snprintf(buf, len, "%ld", rounded);
+    } else {
+        long whole = rounded / factor;
+        long frac  = rounded % factor;
+        if (frac < 0) frac = -frac;
+        char fmt[16];
+        snprintf(fmt, sizeof(fmt), "%%ld.%%0%dd", dp);
+        snprintf(buf, len, fmt, whole, static_cast<int>(frac));
+    }
+}
+
+// Add a float field to a cJSON object with fixed decimal places.
+static void add_float(cJSON* obj, const char* key, float value, int dp)
+{
+    char buf[32];
+    fmt_dp(buf, sizeof(buf), value, dp);
+    // Add as a raw number so cJSON doesn't re-format it
+    cJSON* item = cJSON_CreateRaw(buf);
+    if (item) cJSON_AddItemToObject(obj, key, item);
 }
 
 char* telemetry_to_json(const Telemetry& t)
@@ -27,9 +51,30 @@ char* telemetry_to_json(const Telemetry& t)
     cJSON_AddNumberToObject(root, "schema_version", 1);
     cJSON_AddStringToObject(root, "device_id",      config::DEVICE_ID);
     cJSON_AddNumberToObject(root, "sequence",        static_cast<double>(t.sequence));
-    cJSON_AddNumberToObject(root, "uptime_ms",       static_cast<double>(t.uptime_ms));
-    cJSON_AddBoolToObject  (root, "simulated",       true);
 
+    // Omit timestamp entirely when not yet synchronised.
+    if (t.timestamp_utc[0] != '\0') {
+        cJSON_AddStringToObject(root, "timestamp", t.timestamp_utc);
+    }
+
+    cJSON_AddNumberToObject(root, "uptime_ms", static_cast<double>(t.uptime_ms));
+    cJSON_AddBoolToObject  (root, "simulated", true);
+
+    // Network object
+    cJSON* net = cJSON_AddObjectToObject(root, "network");
+    if (!net) {
+        ESP_LOGE(TAG, "Failed to allocate network object");
+        cJSON_Delete(root);
+        return nullptr;
+    }
+    cJSON_AddBoolToObject(net, "connected", t.net_connected);
+    cJSON_AddBoolToObject(net, "internet",  t.net_internet);
+    if (t.net_connected) {
+        cJSON_AddStringToObject(net, "ip",       t.net_ip_addr);
+        cJSON_AddNumberToObject(net, "rssi_dbm", t.net_rssi_dbm);
+    }
+
+    // Measurements
     cJSON* m = cJSON_AddObjectToObject(root, "measurements");
     if (!m) {
         ESP_LOGE(TAG, "Failed to allocate measurements object");
@@ -37,17 +82,13 @@ char* telemetry_to_json(const Telemetry& t)
         return nullptr;
     }
 
-    // Environmental — 1 d.p.
-    cJSON_AddNumberToObject(m, "temperature_c", round_dp(t.temperature_c, 10.0f));
-    cJSON_AddNumberToObject(m, "humidity_pct",  round_dp(t.humidity_pct,  10.0f));
-    cJSON_AddNumberToObject(m, "pressure_hpa",  round_dp(t.pressure_hpa,  100.0f)); // 2 d.p.
-    cJSON_AddNumberToObject(m, "co2_ppm",       round_dp(t.co2_ppm,       1.0f));   // 0 d.p.
-    cJSON_AddNumberToObject(m, "light_lux",     round_dp(t.light_lux,     10.0f));  // 1 d.p.
-    cJSON_AddNumberToObject(m, "voc_index",     round_dp(t.voc_index,     1.0f));   // 0 d.p.
-
-    // Device health
-    cJSON_AddNumberToObject(m, "battery_mv",    round_dp(t.battery_mv,    1.0f));   // 0 d.p.
-    cJSON_AddNumberToObject(m, "rssi_dbm",      static_cast<double>(t.rssi_dbm));
+    add_float(m, "temperature_c", t.temperature_c, 1);
+    add_float(m, "humidity_pct",  t.humidity_pct,  1);
+    add_float(m, "pressure_hpa",  t.pressure_hpa,  2);
+    add_float(m, "co2_ppm",       t.co2_ppm,       0);
+    add_float(m, "light_lux",     t.light_lux,     1);
+    add_float(m, "voc_index",     t.voc_index,     0);
+    add_float(m, "battery_mv",    t.battery_mv,    0);
 
     char* json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -56,5 +97,5 @@ char* telemetry_to_json(const Telemetry& t)
         ESP_LOGE(TAG, "Failed to serialise telemetry to JSON");
     }
 
-    return json; // caller must free()
+    return json;
 }
