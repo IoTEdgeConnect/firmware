@@ -8,8 +8,9 @@ CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_DEFAULT_LEVEL=3
 
-# Task watchdog — warn rather than panic during development
-CONFIG_ESP_TASK_WDT_PANIC=n
+# Task watchdog — panic on timeout so a stuck task produces a clean crash
+# with a full backtrace rather than a silent warning loop.
+CONFIG_ESP_TASK_WDT_PANIC=y
 
 # Wi-Fi
 CONFIG_ESP_WIFI_ENABLED=y
