@@ -34,8 +34,12 @@ static void telemetry_task(void* /*arg*/)
         static_assert(sizeof(sample.net_ip_addr) == sizeof(net.ip_addr), "IP buffer size mismatch");
         memcpy(sample.net_ip_addr, net.ip_addr, sizeof(sample.net_ip_addr));
 
-        // Populate wall-clock timestamp if synchronised
-        time_sync_get_iso8601(sample.timestamp_utc, sizeof(sample.timestamp_utc));
+        // Populate wall-clock timestamp if synchronised; ensure buffer is
+        // explicitly empty when time is not yet valid so telemetry_to_json
+        // omits the field rather than emitting a stale or uninitialised value.
+        if (!time_sync_get_iso8601(sample.timestamp_utc, sizeof(sample.timestamp_utc))) {
+            sample.timestamp_utc[0] = '\0';
+        }
 
         char* json = telemetry_to_json(sample);
         if (json) {
