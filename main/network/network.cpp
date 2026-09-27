@@ -118,7 +118,13 @@ static void reconnect_task(void* /*arg*/)
         esp_netif_dhcpc_stop(s_netif);
         esp_netif_dhcpc_start(s_netif);
         ESP_LOGI(TAG, "Reconnecting to %s", wifi_config::SSID);
-        esp_wifi_connect();
+        {
+            esp_err_t e = esp_wifi_connect();
+            if (e != ESP_OK) {
+                ESP_LOGE(TAG, "esp_wifi_connect() failed in reconnect task (err 0x%x: %s)",
+                         e, esp_err_to_name(e));
+            }
+        }
     }
 }
 
@@ -133,7 +139,13 @@ static void wifi_event_handler(void* /*arg*/, esp_event_base_t base,
         switch (id) {
             case WIFI_EVENT_STA_START:
                 ESP_LOGI(TAG, "Connecting to %s", wifi_config::SSID);
-                esp_wifi_connect();
+                {
+                    esp_err_t e = esp_wifi_connect();
+                    if (e != ESP_OK) {
+                        ESP_LOGE(TAG, "esp_wifi_connect() failed on STA start (err 0x%x: %s)",
+                                 e, esp_err_to_name(e));
+                    }
+                }
                 break;
 
             case WIFI_EVENT_STA_CONNECTED:
