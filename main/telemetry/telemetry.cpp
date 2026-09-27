@@ -39,7 +39,11 @@ static void add_float(cJSON* obj, const char* key, float value, int dp)
     fmt_dp(buf, sizeof(buf), value, dp);
     // Add as a raw number so cJSON doesn't re-format it
     cJSON* item = cJSON_CreateRaw(buf);
-    if (item) cJSON_AddItemToObject(obj, key, item);
+    if (item) {
+        cJSON_AddItemToObject(obj, key, item);
+    } else {
+        ESP_LOGE(TAG, "Failed to allocate JSON number for field '%s'", key);
+    }
 }
 
 char* telemetry_to_json(const Telemetry& t)
