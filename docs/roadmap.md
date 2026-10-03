@@ -20,7 +20,8 @@ timeline
             : Wall-clock timestamps
     Phase 3 : MQTT transport
             : AWS IoT Core
-            : Device shadow
+            : mTLS device auth
+            : QoS 1 telemetry
     Phase 4 : Real sensors
             : Replace simulated generator
             : Sensor abstraction layer
@@ -80,28 +81,32 @@ timeline
 
 ---
 
-## Phase 3 — Cloud Connectivity
+## Phase 3 — Cloud Connectivity (Complete)
 
-**Goal:** Publish telemetry to AWS IoT Core via MQTT.
+**Goal:** Publish telemetry to AWS IoT Core via MQTT over mTLS.
 
-**Planned additions:**
+**Delivered:**
 
-- MQTT client (AWS IoT Core, TLS, certificate-based auth)
-- Device shadow for reported state
-- Telemetry published to `dt/iotedgeconnect/<device_id>/telemetry`
+- `mqtt.cpp` — ESP-IDF MQTT client, mTLS, AWS IoT Core connection lifecycle
+- Device certificate, private key, and root CA embedded at build time via `target_add_binary_data`
+- Certificate material in `main/certs/` — gitignored, never committed
+- `mqtt_config.h` — account-specific endpoint config, gitignored (template committed as `mqtt_config.example.h`)
+- Telemetry published to `devices/esp32-dev-001/telemetry` at QoS 1
 - Serial output retained alongside MQTT for debugging
+- MQTT state tracked independently of Wi-Fi state
+- Telemetry continues uninterrupted if MQTT is unavailable
+- MQTT reconnects automatically via ESP-IDF client built-in backoff
+- Firmware version bumped to `0.3.0`
+- CI generates placeholder certificate stubs from `tests/certs/`
 
-**Architecture impact:**
+**What Phase 3 does not include:**
 
-A new transport module is added alongside the existing serial output.
-`telemetry_to_json` output is reused as the MQTT payload. The generator,
-struct, and task are unchanged.
-
-**What Phase 3 will not include:**
-
+- Device Shadows
+- Remote commands
+- Offline MQTT buffering (messages generated during outages are dropped)
 - Real sensors
 - OTA
-- Provisioning automation
+- Fleet Provisioning
 
 ---
 

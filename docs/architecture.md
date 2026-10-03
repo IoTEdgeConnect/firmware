@@ -25,7 +25,7 @@ The architecture is governed by three rules that apply across all phases:
 
 ---
 
-## Current Module Structure (Phase 2)
+## Current Module Structure (Phase 3)
 
 ```mermaid
 graph TD
@@ -57,17 +57,28 @@ graph TD
         CJSON[cJSON\nESP-IDF component]
     end
 
+    subgraph mqtt [MQTT]
+        MQ[mqtt.cpp\nAWS IoT Core · mTLS]
+    end
+
     subgraph config [Configuration]
         CFG[device_config.h\nDEVICE_ID · VERSION · INTERVAL]
         WCFG[wifi_config.h\nSSID · PASSWORD\ngitignored]
+        MCFG[mqtt_config.h\nENDPOINT · TOPIC\ngitignored]
+    end
+
+    subgraph certs [Certificates]
+        CERTS[main/certs/\ndevice.crt · device.key\nroot-ca.pem\ngitignored]
     end
 
     subgraph output [Output]
         UART[Serial console\nprintf]
+        AWS[AWS IoT Core\nMQTT Test Client]
     end
 
     APP -->|network_init| NET
     APP -->|time_sync_init| TS
+    APP -->|mqtt_init| MQ
     APP -->|xTaskCreate| TASK
     TASK -->|next| GEN
     GEN -->|returns| STRUCT
@@ -77,11 +88,15 @@ graph TD
     STRUCT -->|passed to| SER
     SER -->|uses| CJSON
     SER -->|returns char star| TASK
-    TASK -->|printf + free| UART
+    TASK -->|printf| UART
+    TASK -->|mqtt_publish_telemetry| MQ
+    MQ -->|MQTT/mTLS| AWS
 
     APP -.->|reads| CFG
     NET -.->|reads| WCFG
     SER -.->|reads| CFG
+    MQ -.->|reads| MCFG
+    MQ -.->|embeds| CERTS
 ```
 
 ---
@@ -94,17 +109,29 @@ firmware/
 ├── sdkconfig.defaults              Default SDK configuration
 │
 ├── main/
-│   ├── CMakeLists.txt              Component registration
-│   ├── app_main.cpp                Entry point; init network/time, create telemetry task
+│   ├── CMakeLists.txt              Component registration + certificate embedding
+│   ├── app_main.cpp                Entry point; init network/time/mqtt, create telemetry task
+│   │
+│   ├── certs/                      Local certificate material — gitignored, never committed
+│   │   ├── README.md               Instructions for obtaining and placing certificates
+│   │   ├── device.crt              Device certificate (download from AWS IoT console)
+│   │   ├── device.key              Device private key (download once at creation)
+│   │   └── root-ca.pem             Amazon Root CA 1
 │   │
 │   ├── config/
 │   │   ├── device_config.h         Device identity, firmware version, telemetry interval
 │   │   ├── wifi_config.example.h   Committed template — placeholder credentials only
-│   │   └── wifi_config.h           Local credentials — gitignored, never committed
+│   │   ├── wifi_config.h           Local Wi-Fi credentials — gitignored, never committed
+│   │   ├── mqtt_config.example.h   Committed template — placeholder endpoint only
+│   │   └── mqtt_config.h           Local AWS IoT endpoint config — gitignored, never committed
 │   │
 │   ├── network/
 │   │   ├── network.h               Public API: network_init(), network_get_status()
 │   │   └── network.cpp             Wi-Fi STA, NVS init, event handler, reconnection
+│   │
+│   ├── mqtt/
+│   │   ├── mqtt.h                  Public API: mqtt_init(), mqtt_publish_telemetry(), mqtt_is_connected()
+│   │   └── mqtt.cpp                ESP-IDF MQTT client, mTLS, AWS IoT Core connection lifecycle
 │   │
 │   ├── time_sync/
 │   │   ├── time_sync.h             Public API: time_sync_init(), is_valid(), get_iso8601()
@@ -138,18 +165,23 @@ sequenceDiagram
     participant M as app_main
     participant N as network.cpp
     participant TS as time_sync.cpp
+    participant MQ as mqtt.cpp
     participant T as telemetry_task
     participant G as TelemetryGenerator
     participant S as telemetry_to_json
     participant C as Serial console
+    participant AWS as AWS IoT Core
 
     M->>M: Log startup info (device ID, version, interval)
     M->>N: network_init() — NVS, netif, Wi-Fi STA, start
     M->>TS: time_sync_init() — SNTP poll mode
+    M->>MQ: mqtt_init() — configure mTLS, start client
     M->>T: xTaskCreate(telemetry_task, stack=4096, priority=5)
 
     Note over N: Wi-Fi connects asynchronously via event loop
     N-->>TS: (IP obtained — SNTP begins synchronising)
+    Note over MQ: MQTT connects asynchronously after Wi-Fi
+    MQ-->>AWS: TLS handshake + mTLS authentication
 
     loop Every TELEMETRY_INTERVAL_MS (5 000 ms)
         T->>T: vTaskDelayUntil()
@@ -162,6 +194,8 @@ sequenceDiagram
         T->>S: telemetry_to_json(sample)
         S-->>T: heap-allocated JSON string
         T->>C: printf("%s\n", json)
+        T->>MQ: mqtt_publish_telemetry(json) — best-effort
+        MQ-->>AWS: PUBLISH devices/esp32-dev-001/telemetry QoS 1
         T->>T: free(json)
     end
 ```
@@ -280,6 +314,11 @@ from the `network` object when `connected` is `false`.
 | `simulated: true` flag in JSON | Allows the platform to distinguish test data from real sensor data at ingestion |
 | `schema_version: 1` in JSON | Enables schema evolution without breaking consumers |
 | Float rounded to 1 d.p. | cJSON's default double formatting produces excessive precision (e.g. `21.830028533935547`) |
+| MQTT QoS 1 | At-least-once delivery; acceptable for telemetry. Duplicates are detectable via `sequence`. QoS 2 adds round-trip overhead not justified at this stage |
+| Certificates embedded via `target_add_binary_data` | ESP-IDF idiomatic approach; files are baked into the binary at build time, not read from flash at runtime |
+| MQTT state tracked separately from Wi-Fi state | Wi-Fi connected ≠ MQTT connected; AWS/TLS failures must not be conflated with network failures |
+| MQTT failure does not stop telemetry | Core telemetry task must remain operational regardless of cloud connectivity |
+| ESP-IDF MQTT client built-in reconnect | Avoids a manual reconnect loop; the client handles exponential backoff automatically |
 
 ---
 
