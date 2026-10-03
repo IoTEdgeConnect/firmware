@@ -5,6 +5,7 @@ idf_component_register(
         "time_sync/time_sync.cpp"
         "telemetry/telemetry.cpp"
         "telemetry/telemetry_generator.cpp"
+        "mqtt/mqtt.cpp"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -15,4 +16,12 @@ idf_component_register(
         nvs_flash
         lwip
         json
+        mqtt
 )
+
+# Embed certificate material directly into the firmware binary.
+# The files must exist in main/certs/ before building.
+# If any file is absent CMake will fail here with a clear error.
+target_add_binary_data(${COMPONENT_LIB} "certs/device.crt" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "certs/device.key" TEXT)
+target_add_binary_data(${COMPONENT_LIB} "certs/root-ca.pem" TEXT)
