@@ -13,7 +13,8 @@ All three files are listed in `.gitignore` and must **never** be committed.
 
 ## Obtaining the files
 
-Follow `docs/device-provisioning.md` in the `infrastructure` repository.
+Follow [`infrastructure/docs/device-provisioning.md`](../../../../infrastructure/docs/device-provisioning.md)
+in the `infrastructure` repository.
 
 1. Download the device certificate and private key from the AWS IoT Core console
    at the moment of certificate creation (the private key cannot be re-downloaded).

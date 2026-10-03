@@ -84,9 +84,10 @@ constexpr const char* BROKER_URI  = "mqtts://xxxxxxxxxxxxx-ats.iot.eu-west-2.ama
 
 ### 3. Place certificate material
 
-Follow the provisioning guide in the `infrastructure` repository
-(`docs/device-provisioning.md`) to create the AWS IoT Thing and download
-the certificate material. Then place the three files in `main\certs\`:
+Follow the provisioning guide in the `infrastructure` repository —
+[`infrastructure/docs/device-provisioning.md`](../infrastructure/docs/device-provisioning.md) —
+to create the AWS IoT Thing and download the certificate material.
+Then place the three files in `main\certs\`:
 
 | File | Source |
 |---|---|
@@ -259,6 +260,8 @@ accidentally committed, treat it as compromised and revoke it immediately.
 | [WSL Usage](docs/wsl.md) | Forwarding an ESP32 from Windows to WSL via usbipd-win |
 | [Testing](docs/testing.md) | Host-side unit tests, coverage and CI |
 | [Roadmap](docs/roadmap.md) | Phase-by-phase development plan and design constraints |
+| [Certificate Setup](main/certs/README.md) | Placing device credentials for the firmware build |
+| [Infrastructure README](../infrastructure/README.md) | AWS-side infrastructure: Terraform, IoT policy, provisioning |
 
 ---
 
