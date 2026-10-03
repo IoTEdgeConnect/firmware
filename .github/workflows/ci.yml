@@ -18,8 +18,15 @@ jobs:
         uses: actions/checkout@v4.2.2
 
       - name: Create placeholder Wi-Fi config
-        run: |
-          cp main/config/wifi_config.example.h main/config/wifi_config.h
+        run: cp main/config/wifi_config.example.h main/config/wifi_config.h
+        working-directory: ${{ github.workspace }}
+
+      - name: Create placeholder MQTT config
+        run: cp main/config/mqtt_config.example.h main/config/mqtt_config.h
+        working-directory: ${{ github.workspace }}
+
+      - name: Copy placeholder certificate stubs
+        run: cp tests/certs/device.crt tests/certs/device.key tests/certs/root-ca.pem main/certs/
         working-directory: ${{ github.workspace }}
 
       - name: Run host-side unit tests
