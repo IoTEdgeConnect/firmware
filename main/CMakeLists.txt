@@ -17,6 +17,7 @@ idf_component_register(
         lwip
         json
         mqtt
+        mbedtls
 )
 
 # Embed certificate material directly into the firmware binary.
