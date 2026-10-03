@@ -3,6 +3,7 @@
 #include "time_sync/time_sync.h"
 #include "telemetry/telemetry.h"
 #include "telemetry/telemetry_generator.h"
+#include "mqtt/mqtt.h"
 
 #include <cinttypes>
 #include <cstdio>
@@ -34,21 +35,30 @@ static void telemetry_task(void* /*arg*/)
         static_assert(sizeof(sample.net_ip_addr) == sizeof(net.ip_addr), "IP buffer size mismatch");
         memcpy(sample.net_ip_addr, net.ip_addr, sizeof(sample.net_ip_addr));
 
-        // Populate wall-clock timestamp if synchronised; ensure buffer is
-        // explicitly empty when time is not yet valid so telemetry_to_json
-        // omits the field rather than emitting a stale or uninitialised value.
+        // Populate wall-clock timestamp if synchronised.
         if (!time_sync_get_iso8601(sample.timestamp_utc, sizeof(sample.timestamp_utc))) {
             sample.timestamp_utc[0] = '\0';
         }
 
         char* json = telemetry_to_json(sample);
-        if (json) {
-            printf("%s\n", json);
-            free(json);
-        } else {
-            ESP_LOGE(TAG, "Telemetry sample %" PRIu64 " dropped — JSON serialisation failed (sequence: %" PRIu64 ", uptime: %" PRId64 " ms)",
-                     sample.sequence, sample.sequence, sample.uptime_ms);
+        if (!json) {
+            ESP_LOGE(TAG, "Telemetry sample %" PRIu64 " dropped — JSON serialisation failed",
+                     sample.sequence);
+            continue;
         }
+
+        // Serial output — always available for debugging regardless of MQTT state.
+        printf("%s\n", json);
+
+        // MQTT publish — best-effort; telemetry continues if MQTT is unavailable.
+        // Wi-Fi connected != MQTT connected; log both states on failure so the
+        // developer can distinguish network issues from AWS/TLS issues.
+        if (!mqtt_publish_telemetry(json, static_cast<int>(strlen(json)))) {
+            ESP_LOGD(TAG, "Wi-Fi: %s  MQTT: disconnected",
+                     net.connected ? "connected" : "disconnected");
+        }
+
+        free(json);
     }
 }
 
@@ -61,6 +71,7 @@ extern "C" void app_main()
 
     network_init();
     time_sync_init();
+    mqtt_init();
 
     if (xTaskCreate(telemetry_task, "telemetry", 4096, nullptr, 5, nullptr) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create telemetry task — out of memory (stack: 4096 words)");
