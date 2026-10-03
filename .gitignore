@@ -28,4 +28,18 @@ credentials.*
 # Wi-Fi credentials — copy wifi_config.example.h to wifi_config.h locally
 main/config/wifi_config.h
 
+# MQTT / AWS IoT endpoint config — copy mqtt_config.example.h to mqtt_config.h locally
+main/config/mqtt_config.h
+
+# Device certificate material — place in main/certs/ locally, never commit
+main/certs/device.crt
+main/certs/device.key
+main/certs/root-ca.pem
+
+# CI placeholder stubs in tests/certs/ are committed intentionally
+# (they contain no usable key material)
+!tests/certs/device.crt
+!tests/certs/device.key
+!tests/certs/root-ca.pem
+
 .amazonq
